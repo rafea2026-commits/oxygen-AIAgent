@@ -3,11 +3,8 @@
 const path = require('path');
 const fs = require('fs');
 const { extractSkeletonWithMeta } = require('./skeleton');
-const { calculateSavings } = require('./core/tokens');
+const { calculateSavings, estimateTokens } = require('./core/tokens');
 
-/**
- * @param {string} workspaceRoot
- */
 function ensureOxygenDir(workspaceRoot) {
     const dir = path.join(workspaceRoot, '.oxygen');
     if (!fs.existsSync(dir)) {
@@ -16,20 +13,13 @@ function ensureOxygenDir(workspaceRoot) {
     return dir;
 }
 
-/**
- * @param {string} workspaceRoot
- * @param {string} relativePath
- * @param {string} skeleton
- */
 function cacheSkeleton(workspaceRoot, relativePath, skeleton) {
     const dir = path.join(ensureOxygenDir(workspaceRoot), 'skeletons');
     const safeName = relativePath.replace(/[\\/:*?"<>|]/g, '_');
     const cachePath = path.join(dir, `${safeName}.skel.txt`);
-
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
     }
-
     fs.writeFileSync(cachePath, skeleton, 'utf8');
     return cachePath;
 }
@@ -45,12 +35,18 @@ function processFile(workspaceRoot, filePath, source, pricing) {
     const rel = path.relative(workspaceRoot, filePath).replace(/\\/g, '/');
     const cachePath = cacheSkeleton(workspaceRoot, rel, meta.skeleton);
     const savings = calculateSavings(source, meta.skeleton, pricing);
+    const originalTokens = estimateTokens(source);
+    const skeletonTokens = estimateTokens(meta.skeleton);
 
-    return { ...meta, rel, cachePath, savings };
+    return {
+        ...meta,
+        rel,
+        cachePath,
+        savings,
+        originalTokens,
+        skeletonTokens,
+        skeleton: meta.skeleton,
+    };
 }
 
-module.exports = {
-    ensureOxygenDir,
-    cacheSkeleton,
-    processFile,
-};
+module.exports = { ensureOxygenDir, cacheSkeleton, processFile };

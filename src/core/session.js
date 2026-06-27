@@ -1,6 +1,6 @@
 'use strict';
 
-const { calculateSavings, minifyText } = require('./tokens');
+const { calculateSavings } = require('./tokens');
 const { tokensToDollars } = require('./pricing');
 
 class SessionTracker {
@@ -9,66 +9,71 @@ class SessionTracker {
      */
     constructor(pricing) {
         this.pricing = pricing;
-        /** @type {number} */
         this.totalSavedUSD = 0;
-        /** @type {Map<string, number>} */
-        this.fileSavings = new Map();
-        /** @type {number} */
-        this.purifyBonusUSD = 0;
-        /** @type {number} */
         this.totalSavedTokens = 0;
+        /** @type {Map<string, number>} */
+        this.fileSavingsUSD = new Map();
+        /** @type {Map<string, number>} */
+        this.fileSavedTokens = new Map();
+        /** @type {Map<string, number>} */
+        this.fileCompression = new Map();
     }
 
-    /**
-     * @param {{ inputPerMillion: number, outputPerMillion?: number }} pricing
-     */
     setPricing(pricing) {
         this.pricing = pricing;
     }
 
     /**
+     * Track minification savings when user runs Minify Selection.
      * @param {string} uri
      * @param {string} rawText
+     * @param {string} cleanedText
      */
-    recordFile(uri, rawText) {
-        const cleaned = minifyText(rawText);
-        const result = calculateSavings(rawText, cleaned, this.pricing);
-        const previous = this.fileSavings.get(uri) ?? 0;
-        const delta = result.savedDollar - previous;
-
-        if (delta > 0) {
-            this.totalSavedUSD += delta;
-            this.totalSavedTokens += result.savedTokens - (this._lastTokens?.get(uri) ?? 0);
-        } else if (delta < 0) {
-            this.totalSavedUSD = Math.max(0, this.totalSavedUSD + delta);
-        }
-
-        if (!this._lastTokens) {
-            this._lastTokens = new Map();
-        }
-        this._lastTokens.set(uri, result.savedTokens);
-        this.fileSavings.set(uri, result.savedDollar);
+    recordMinify(uri, rawText, cleanedText) {
+        const result = calculateSavings(rawText, cleanedText, this.pricing);
+        this._applyDelta(uri, result.savedTokens, result.savedDollar);
         return result;
     }
 
     /**
-     * @param {number} bonusTokens
+     * Track skeleton compression savings (primary metric).
+     * @param {string} uri
+     * @param {string} rawText
+     * @param {string} skeleton
      */
-    addPurifyBonus(bonusTokens) {
-        const bonus = tokensToDollars(bonusTokens, this.pricing, 'input');
-        this.purifyBonusUSD += bonus;
-        this.totalSavedUSD += bonus;
-        this.totalSavedTokens += bonusTokens;
-        return bonus;
+    recordSkeleton(uri, rawText, skeleton) {
+        const result = calculateSavings(rawText, skeleton, this.pricing);
+        this._applyDelta(uri, result.savedTokens, result.savedDollar);
+        const ratio = rawText.length > 0 ? skeleton.length / rawText.length : 0;
+        this.fileCompression.set(uri, ratio);
+        return result;
     }
 
     /**
-     * @param {number} dollars
+     * @param {string} uri
+     * @param {number} newSavedTokens
+     * @param {number} newSavedUSD
      */
-    addExplicitSavings(dollars) {
-        if (dollars > 0) {
-            this.totalSavedUSD += dollars;
+    _applyDelta(uri, newSavedTokens, newSavedUSD) {
+        const prevTokens = this.fileSavedTokens.get(uri) ?? 0;
+        const prevUSD = this.fileSavingsUSD.get(uri) ?? 0;
+        const deltaTokens = newSavedTokens - prevTokens;
+        const deltaUSD = newSavedUSD - prevUSD;
+
+        if (deltaTokens > 0) {
+            this.totalSavedTokens += deltaTokens;
+        } else if (deltaTokens < 0) {
+            this.totalSavedTokens = Math.max(0, this.totalSavedTokens + deltaTokens);
         }
+
+        if (deltaUSD > 0) {
+            this.totalSavedUSD += deltaUSD;
+        } else if (deltaUSD < 0) {
+            this.totalSavedUSD = Math.max(0, this.totalSavedUSD + deltaUSD);
+        }
+
+        this.fileSavedTokens.set(uri, newSavedTokens);
+        this.fileSavingsUSD.set(uri, newSavedUSD);
     }
 
     getTotalSavedUSD() {
@@ -81,6 +86,10 @@ class SessionTracker {
 
     getPricingLabel() {
         return this.pricing.label ?? 'Custom';
+    }
+
+    getCompression(uri) {
+        return this.fileCompression.get(uri);
     }
 }
 

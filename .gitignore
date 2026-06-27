@@ -1,5 +1,6 @@
-<<<<<<< HEAD
-...
-=======
-...
->>>>>>> main
+node_modules/
+.vscode-test/
+*.vsix
+.oxygen/
+.DS_Store
+*.log

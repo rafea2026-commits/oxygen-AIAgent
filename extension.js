@@ -8,12 +8,12 @@ const { SessionTracker } = require('./src/core/session');
 const { resolvePricing } = require('./src/core/pricing');
 const { estimateTokens } = require('./src/core/tokens');
 const { extractSkeletonWithMeta } = require('./src/skeleton');
-const { computeScope, writeScopeArtifacts } = require('./src/geoFence');
-const { syncBackbone } = require('./src/backbone');
+const { computeScope, writeScopeArtifacts } = require('./src/scope');
 const { processFile, ensureOxygenDir } = require('./src/oxygenCache');
 const { createStatusBar } = require('./src/ui/statusBar');
-const { detectHallucination } = require('./src/hallucination/detector');
 const { SessionActivity, buildSessionSummary, writeSessionSummary } = require('./src/session/summary');
+const { writeProjectMap, entryFromProcessResult } = require('./src/context/projectMap');
+const { indexWorkspace, buildContextBundle, minifySelection } = require('./src/context/bundle');
 
 /** @type {SessionTracker | undefined} */
 let session;
@@ -21,12 +21,20 @@ let session;
 let sessionActivity;
 /** @type {ReturnType<createStatusBar> | undefined} */
 let statusBar;
+/** @type {import('vscode').OutputChannel | undefined} */
+let logChannel;
 /** @type {NodeJS.Timeout | undefined} */
 let debounceTimer;
 /** @type {NodeJS.Timeout | undefined} */
 let summaryTimer;
-/** @type {Map<string, number>} */
-const lastHallucinationAlert = new Map();
+/** @type {NodeJS.Timeout | undefined} */
+let summaryFlushTimer;
+
+function log(msg) {
+    const line = `[Oxygen] ${msg}`;
+    logChannel?.appendLine(line);
+    console.log(line);
+}
 
 function getConfig() {
     return vscode.workspace.getConfiguration('oxygen');
@@ -41,18 +49,36 @@ function getWorkspaceRoot() {
 }
 
 function activate(context) {
+    logChannel = vscode.window.createOutputChannel('Oxygen');
+    context.subscriptions.push(logChannel);
+    log('Token Saver v1.0 — activating');
+
     session = new SessionTracker(getPricing());
     sessionActivity = new SessionActivity();
 
     statusBar = createStatusBar(vscode, session);
-    statusBar.item.show();
+    if (getConfig().get('ui.showStatusBar', true)) {
+        statusBar.item.show();
+    }
     context.subscriptions.push(statusBar.item);
+
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeConfiguration((e) => {
+            if (e.affectsConfiguration('oxygen.ui.showStatusBar') && statusBar) {
+                if (getConfig().get('ui.showStatusBar', true)) {
+                    statusBar.item.show();
+                } else {
+                    statusBar.item.hide();
+                }
+            }
+        })
+    );
 
     context.subscriptions.push(
         vscode.workspace.onDidChangeConfiguration((e) => {
             if (e.affectsConfiguration('oxygen.pricing') && session) {
                 session.setPricing(getPricing());
-                statusBar?.render();
+                refreshStatusBar();
             }
         })
     );
@@ -60,7 +86,7 @@ function activate(context) {
     context.subscriptions.push(
         vscode.window.onDidChangeActiveTextEditor((editor) => {
             if (editor) {
-                onActiveFileChanged(editor);
+                scheduleRefresh(editor);
             }
         })
     );
@@ -68,36 +94,60 @@ function activate(context) {
     context.subscriptions.push(
         vscode.workspace.onDidChangeTextDocument((event) => {
             const editor = vscode.window.activeTextEditor;
-            if (!editor || event.document.uri.toString() !== editor.document.uri.toString()) {
-                return;
+            if (editor && event.document.uri.toString() === editor.document.uri.toString()) {
+                scheduleRefresh(editor);
             }
-            scheduleRefresh(editor);
         })
     );
 
-    const summaryIntervalMin = getConfig().get('session.summaryIntervalMinutes', 3);
+    context.subscriptions.push(
+        vscode.workspace.onDidSaveTextDocument((doc) => {
+            if (doc.uri.scheme === 'file') {
+                void handleFile(doc.uri.fsPath, doc.getText());
+            }
+        })
+    );
+
+    const summaryMin = getConfig().get('session.summaryIntervalMinutes', 3);
     if (getConfig().get('session.autoSummary', true)) {
-        summaryTimer = setInterval(() => flushSessionSummary(false), summaryIntervalMin * 60 * 1000);
+        summaryTimer = setInterval(() => flushSessionSummary(), summaryMin * 60 * 1000);
         context.subscriptions.push({ dispose: () => clearInterval(summaryTimer) });
     }
 
-    if (vscode.window.activeTextEditor) {
-        onActiveFileChanged(vscode.window.activeTextEditor);
-    }
-
     registerCommands(context);
-    console.log('Oxygen AI Agent v0.2 — Phase 2 active');
+
+    setImmediate(() => {
+        const root = getWorkspaceRoot();
+        if (root && getConfig().get('tokens.autoIndexOnOpen', true)) {
+            void runWorkspaceIndex(false);
+        }
+        if (vscode.window.activeTextEditor) {
+            void handleEditor(vscode.window.activeTextEditor);
+        } else {
+            refreshStatusBar(undefined);
+            statusBar?.item.show();
+        }
+    });
+
+    log('ready');
 }
 
 function scheduleRefresh(editor) {
     if (debounceTimer) {
         clearTimeout(debounceTimer);
     }
-    debounceTimer = setTimeout(() => onActiveFileChanged(editor), 400);
+    debounceTimer = setTimeout(() => void handleEditor(editor), 350);
 }
 
-async function onActiveFileChanged(editor) {
-    if (!session || !statusBar || !sessionActivity) {
+function refreshStatusBar(editor) {
+    const text = editor?.document.getText() ?? '';
+    const tokens = text ? estimateTokens(text) : 0;
+    const largeAt = getConfig().get('tokens.largeFileWarning', 4000);
+    statusBar?.render(tokens, tokens > largeAt);
+}
+
+async function handleEditor(editor) {
+    if (!session || !sessionActivity) {
         return;
     }
 
@@ -108,34 +158,24 @@ async function onActiveFileChanged(editor) {
     const fsPath = editor.document.uri.fsPath;
     const root = getWorkspaceRoot();
 
-    session.recordFile(uri, text);
-    statusBar.render();
+    refreshStatusBar(editor);
 
     if (root && fsPath.startsWith(root)) {
-        const rel = path.relative(root, fsPath).replace(/\\/g, '/');
-        sessionActivity.touchFile(rel);
+        sessionActivity.touchFile(path.relative(root, fsPath).replace(/\\/g, '/'));
     }
 
     if (config.get('skeleton.autoCache', true) && root && fsPath.startsWith(root)) {
         try {
-            processFile(root, fsPath, text, pricing);
-        } catch {
-            // ignore cache errors
+            const result = processFile(root, fsPath, text, pricing);
+            session.recordSkeleton(uri, text, result.skeleton);
+            refreshStatusBar(editor);
+        } catch (err) {
+            log(`cache skip: ${err instanceof Error ? err.message : err}`);
         }
     }
 
-    if (config.get('geoFence.autoApply', true)) {
-        await applyGeoFence(false);
-    }
-
-    if (config.get('backbone.autoSync', true)) {
-        await syncBackboneQuiet(fsPath);
-    }
-
-    if (config.get('hallucination.enabled', true)) {
-        runHallucinationRadar(text, fsPath, root);
-    } else if (config.get('flopStop.enabled', true)) {
-        checkFlopStop(text);
+    if (config.get('scope.autoApply', true) && root) {
+        applyScope(root, fsPath);
     }
 
     if (config.get('session.autoSummary', true)) {
@@ -143,95 +183,36 @@ async function onActiveFileChanged(editor) {
     }
 }
 
-function runHallucinationRadar(text, filePath, workspaceRoot) {
-    const config = getConfig();
-    const result = detectHallucination(text, filePath, workspaceRoot);
-
-    if (sessionActivity && result.level !== 'ok') {
-        sessionActivity.recordHallucination(result, filePath ? path.basename(filePath) : undefined);
-    }
-
-    const warnAt = config.get('hallucination.warningThreshold', 30);
-    const criticalAt = config.get('hallucination.criticalThreshold', 55);
-
-    if (result.score < warnAt) {
+async function handleFile(fsPath, text) {
+    const root = getWorkspaceRoot();
+    if (!root || !fsPath.startsWith(root) || !session) {
         return;
     }
-
-    const alertKey = `${filePath}:${result.level}`;
-    const prev = lastHallucinationAlert.get(alertKey) ?? 0;
-    if (result.score < prev + 8 && prev >= warnAt) {
-        return;
-    }
-    lastHallucinationAlert.set(alertKey, result.score);
-
-    const topFinding = result.findings[0] ?? 'إشارات هلوسة/تكرار';
-    const actions = result.score >= criticalAt
-        ? ['Agent Compass', 'تطهير السياق']
-        : ['Agent Compass'];
-
-    const fn = result.score >= criticalAt ? 'showErrorMessage' : 'showWarningMessage';
-    vscode.window[fn](
-        `Oxygen Radar [${result.score}/100]: ${topFinding}`,
-        ...actions
-    ).then((choice) => {
-        if (choice === 'Agent Compass') {
-            vscode.commands.executeCommand('oxygen.agentCompass');
-        } else if (choice === 'تطهير السياق') {
-            vscode.commands.executeCommand('oxygen.purifyContext');
-        }
-    });
-
-    if (config.get('flopStop.enabled', true)) {
-        checkFlopStop(text, true);
+    const pricing = getPricing();
+    const uri = vscode.Uri.file(fsPath).toString();
+    try {
+        const result = processFile(root, fsPath, text, pricing);
+        session.recordSkeleton(uri, text, result.skeleton);
+    } catch {
+        // ignore
     }
 }
 
-function checkFlopStop(text, skipDuplicateAlert = false) {
-    const config = getConfig();
-    const maxTokens = config.get('flopStop.maxResponseTokens', 4000);
-    const estimated = estimateTokens(text);
-
-    if (!skipDuplicateAlert) {
-        const lines = text.split(/\r?\n/);
-        const seen = new Map();
-        let repeats = 0;
-        for (const line of lines) {
-            const key = line.trim();
-            if (key.length < 20) {
-                continue;
-            }
-            const count = (seen.get(key) ?? 0) + 1;
-            seen.set(key, count);
-            if (count >= 3) {
-                repeats++;
-            }
-        }
-        if (repeats >= 2) {
-            vscode.window.showWarningMessage(
-                `Oxygen Flop-Stop: ${repeats} أسطر مكررة — قلّل السياق.`,
-                'نسخ Skeleton'
-            ).then((c) => c === 'نسخ Skeleton' && vscode.commands.executeCommand('oxygen.copySkeleton'));
-        }
-    }
-
-    if (estimated > maxTokens * 5) {
-        vscode.window.showInformationMessage(
-            `Oxygen: ~${estimated} توكن في هذا الملف — استخدم Skeleton.`,
-            'نسخ Skeleton'
-        ).then((c) => c === 'نسخ Skeleton' && vscode.commands.executeCommand('oxygen.copySkeleton'));
-    }
+function applyScope(root, fsPath) {
+    const depth = getConfig().get('scope.depth', 2);
+    const scope = computeScope(fsPath, root, depth);
+    const { payload } = writeScopeArtifacts(root, scope);
+    sessionActivity?.setScope(payload.scopeLabel);
 }
 
-let summaryFlushTimer;
 function scheduleSummaryFlush() {
     if (summaryFlushTimer) {
         clearTimeout(summaryFlushTimer);
     }
-    summaryFlushTimer = setTimeout(() => flushSessionSummary(false), 8000);
+    summaryFlushTimer = setTimeout(() => flushSessionSummary(), 8000);
 }
 
-function flushSessionSummary(showMessage) {
+function flushSessionSummary() {
     const root = getWorkspaceRoot();
     if (!root || !session || !sessionActivity) {
         return undefined;
@@ -245,262 +226,155 @@ function flushSessionSummary(showMessage) {
         pricing: getPricing(),
         activeFile: relActive,
     });
-    const mdPath = writeSessionSummary(root, markdown, sessionActivity, session.getTotalSavedUSD());
 
-    if (showMessage) {
-        vscode.window.showInformationMessage(`Oxygen: session summary → ${path.relative(root, mdPath)}`);
-    }
-    return mdPath;
+    return writeSessionSummary(
+        root,
+        markdown,
+        sessionActivity,
+        session.getTotalSavedUSD(),
+        session.getTotalSavedTokens()
+    );
 }
 
-async function syncBackboneQuiet(activeFilePath) {
+async function runWorkspaceIndex(showMessage) {
     const root = getWorkspaceRoot();
-    if (!root) {
-        return;
-    }
-    try {
-        syncBackbone(root, activeFilePath);
-    } catch {
-        // ignore
-    }
-}
-
-async function applyGeoFence(showMessage) {
-    const root = getWorkspaceRoot();
-    const editor = vscode.window.activeTextEditor;
-    if (!root || !editor) {
-        if (showMessage) {
-            vscode.window.showWarningMessage('Oxygen: افتح workspace وملفاً نشطاً.');
-        }
+    if (!root || !session) {
         return;
     }
 
-    const depth = getConfig().get('geoFence.scopeDepth', 2);
-    const scope = computeScope(editor.document.uri.fsPath, root, depth);
-    const { payload } = writeScopeArtifacts(root, scope);
-    sessionActivity?.setScope(payload.scopeLabel);
+    const pricing = getPricing();
+    /** @type {object[]} */
+    const entries = [];
+
+    await indexWorkspace(vscode, root, (fsPath, text) => {
+        const result = processFile(root, fsPath, text, pricing);
+        entries.push(entryFromProcessResult(result));
+        return entryFromProcessResult(result);
+    });
+
+    const { savedTokens, savedPercent } = writeProjectMap(root, entries);
+    sessionActivity?.setIndexed(entries.length);
+    log(`indexed ${entries.length} files — ${savedPercent}% compressible (${savedTokens.toLocaleString()} tok)`);
 
     if (showMessage) {
-        vscode.window.showInformationMessage(
-            `Oxygen Geo-Fence: "${payload.scopeLabel}" — ${payload.blockedGlobs.length} blocked.`
+        void vscode.window.showInformationMessage(
+            `Oxygen: indexed ${entries.length} files — ${savedPercent}% token savings available`
         );
     }
+
+    flushSessionSummary();
+    refreshStatusBar(vscode.window.activeTextEditor);
 }
 
 function registerCommands(context) {
     context.subscriptions.push(
+        vscode.commands.registerCommand('oxygen.showLog', () => logChannel?.show(true))
+    );
+
+    context.subscriptions.push(
         vscode.commands.registerCommand('oxygen.copySkeleton', async () => {
             const editor = vscode.window.activeTextEditor;
             if (!editor) {
-                vscode.window.showWarningMessage('Oxygen: no open file.');
                 return;
             }
-            const meta = extractSkeletonWithMeta(editor.document.getText(), editor.document.uri.fsPath);
+            const text = editor.document.getText();
+            const meta = extractSkeletonWithMeta(text, editor.document.uri.fsPath);
             await vscode.env.clipboard.writeText(meta.skeleton);
-            vscode.window.showInformationMessage(
-                `Skeleton copied (~${Math.round((1 - meta.compressionRatio) * 100)}% smaller, ${meta.languageGroup}).`
-            );
+            const saved = estimateTokens(text) - estimateTokens(meta.skeleton);
+            void vscode.window.showInformationMessage(`Skeleton copied — saves ~${Math.max(0, saved)} tokens`);
         })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('oxygen.copyContextBundle', async () => {
+            const editor = vscode.window.activeTextEditor;
+            const root = getWorkspaceRoot();
+            if (!editor || !root || !session) {
+                return;
+            }
+
+            const text = editor.document.getText();
+            const meta = extractSkeletonWithMeta(text, editor.document.uri.fsPath);
+            const rel = path.relative(root, editor.document.uri.fsPath).replace(/\\/g, '/');
+
+            let mapExcerpt = '';
+            const mapPath = path.join(root, '.oxygen', 'project-map.md');
+            if (fs.existsSync(mapPath)) {
+                mapExcerpt = fs.readFileSync(mapPath, 'utf8').split('\n').slice(0, 25).join('\n');
+            }
+
+            const bundle = buildContextBundle({
+                activeFile: rel,
+                activeSkeleton: meta.skeleton,
+                activeOriginalTokens: estimateTokens(text),
+                scopeLabel: sessionActivity?.lastScopeLabel,
+                sessionSavedUSD: session.getTotalSavedUSD(),
+                sessionSavedTokens: session.getTotalSavedTokens(),
+                pricingLabel: session.getPricingLabel(),
+                projectMapExcerpt: mapExcerpt,
+            });
+
+            await vscode.env.clipboard.writeText(bundle);
+            void vscode.window.showInformationMessage('Context bundle copied — paste into Agent chat');
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('oxygen.purifySelection', async () => {
+            const editor = vscode.window.activeTextEditor;
+            if (!editor || editor.selection.isEmpty || !session) {
+                void vscode.window.showWarningMessage('Select code first');
+                return;
+            }
+            const raw = editor.document.getText(editor.selection);
+            const clean = minifySelection(raw);
+            await vscode.env.clipboard.writeText(clean);
+            const result = session.recordMinify(editor.document.uri.toString(), raw, clean);
+            refreshStatusBar(editor);
+            void vscode.window.showInformationMessage(`Minified selection — saves ~${Math.max(0, result.savedTokens)} tokens`);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('oxygen.indexWorkspace', () => runWorkspaceIndex(true))
     );
 
     context.subscriptions.push(
         vscode.commands.registerCommand('oxygen.generateSkeleton', async () => {
             const editor = vscode.window.activeTextEditor;
             const root = getWorkspaceRoot();
+            if (!editor || !root || !session) {
+                return;
+            }
+            const text = editor.document.getText();
+            const result = processFile(root, editor.document.uri.fsPath, text, getPricing());
+            session.recordSkeleton(editor.document.uri.toString(), text, result.skeleton);
+            refreshStatusBar(editor);
+            void vscode.window.showInformationMessage(`Cached skeleton — saves ~${result.savings.savedTokens} tokens`);
+        })
+    );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('oxygen.applyScope', () => {
+            const editor = vscode.window.activeTextEditor;
+            const root = getWorkspaceRoot();
             if (!editor || !root) {
                 return;
             }
-            const result = processFile(root, editor.document.uri.fsPath, editor.document.getText(), getPricing());
-            session?.addExplicitSavings(result.savings.savedDollar);
-            statusBar?.render();
-            vscode.window.showInformationMessage(`Skeleton cached: ${path.relative(root, result.cachePath)}`);
-        })
-    );
-
-    context.subscriptions.push(
-        vscode.commands.registerCommand('oxygen.applyGeoFence', () => applyGeoFence(true))
-    );
-
-    context.subscriptions.push(
-        vscode.commands.registerCommand('oxygen.syncBackbone', async () => {
-            const root = getWorkspaceRoot();
-            if (!root) {
-                return;
-            }
-            const { backbonePath } = syncBackbone(root, vscode.window.activeTextEditor?.document.uri.fsPath);
-            vscode.window.showInformationMessage(`Backbone synced: ${path.relative(root, backbonePath)}`);
-        })
-    );
-
-    context.subscriptions.push(
-        vscode.commands.registerCommand('oxygen.purifyContext', async () => {
-            if (!session || !statusBar) {
-                return;
-            }
-            const bonus = session.addPurifyBonus(getConfig().get('purify.bonusTokens', 5000));
-            statusBar.render();
-            const root = getWorkspaceRoot();
-            if (root) {
-                ensureOxygenDir(root);
-                const summary = buildPurifySummary(root);
-                fs.writeFileSync(path.join(root, '.oxygen', 'session-purify-summary.md'), summary, 'utf8');
-                await vscode.env.clipboard.writeText(summary);
-            }
-            flushSessionSummary(false);
-            vscode.window.showInformationMessage(`Purified (+$${bonus.toFixed(4)}). Clean prompt copied.`);
+            applyScope(root, editor.document.uri.fsPath);
+            void vscode.window.showInformationMessage('Scope saved — .oxygen/context-scope.json');
         })
     );
 
     context.subscriptions.push(
         vscode.commands.registerCommand('oxygen.copySessionSummary', async () => {
-            const mdPath = flushSessionSummary(true);
+            const mdPath = flushSessionSummary();
             if (mdPath) {
-                const content = fs.readFileSync(mdPath, 'utf8');
-                await vscode.env.clipboard.writeText(content);
+                await vscode.env.clipboard.writeText(fs.readFileSync(mdPath, 'utf8'));
+                void vscode.window.showInformationMessage('Session summary copied');
             }
         })
     );
-
-    context.subscriptions.push(
-        vscode.commands.registerCommand('oxygen.agentCompass', () => {
-            OxygenCompassPanel.createOrShow(context.extensionUri, getWorkspaceRoot(), sessionActivity);
-        })
-    );
-
-    context.subscriptions.push(
-        vscode.commands.registerCommand('oxygen.showDashboard', () => {
-            if (!session) {
-                return;
-            }
-            const p = getPricing();
-            const alerts = sessionActivity?.hallucinationEvents.length ?? 0;
-            vscode.window.showInformationMessage(
-                `Oxygen: $${session.getTotalSavedUSD().toFixed(4)} saved · ${p.label} · ${alerts} radar alerts`
-            );
-        })
-    );
-}
-
-function buildPurifySummary(root) {
-    const autoPath = path.join(root, '.oxygen', 'session-summary.md');
-    if (fs.existsSync(autoPath)) {
-        return fs.readFileSync(autoPath, 'utf8');
-    }
-    return flushSessionSummary(false)
-        ? fs.readFileSync(path.join(root, '.oxygen', 'session-summary.md'), 'utf8')
-        : '# Oxygen Purify\n\n> Describe your next single task here.\n';
-}
-
-class OxygenCompassPanel {
-    static currentPanel;
-
-    static createOrShow(extensionUri, workspaceRoot, activity) {
-        const column = vscode.window.activeTextEditor?.viewColumn;
-        if (OxygenCompassPanel.currentPanel) {
-            OxygenCompassPanel.currentPanel.refresh(activity);
-            OxygenCompassPanel.currentPanel.panel.reveal(column);
-            return;
-        }
-        const panel = vscode.window.createWebviewPanel(
-            'oxygenCompass',
-            'Oxygen — Agent Compass',
-            column || vscode.ViewColumn.Two,
-            { enableScripts: true, retainContextWhenHidden: true }
-        );
-        OxygenCompassPanel.currentPanel = new OxygenCompassPanel(panel, workspaceRoot, activity);
-    }
-
-    constructor(panel, workspaceRoot, activity) {
-        this.panel = panel;
-        this.workspaceRoot = workspaceRoot;
-        this.activity = activity;
-        this.render();
-
-        this.panel.webview.onDidReceiveMessage(async (msg) => {
-            if (msg.command === 'inject') {
-                const alerts = this.activity?.hallucinationEvents.slice(-3) ?? [];
-                const alertText = alerts.length
-                    ? alerts.map((a) => `- [${a.level}] ${a.findings[0] ?? 'signal'}`).join('\n')
-                    : '- No recent alerts';
-
-                const correction = [
-                    '# Oxygen Correction Injection',
-                    '',
-                    'Reset focus now:',
-                    '- One small step only.',
-                    '- No hallucinated paths or APIs.',
-                    '- Read .oxygen/.agent_backbone.yaml and session-summary.md first.',
-                    '',
-                    'Recent radar:',
-                    alertText,
-                    '',
-                    `Developer note: ${msg.note || '(none)'}`,
-                ].join('\n');
-
-                await vscode.env.clipboard.writeText(correction);
-                vscode.window.showInformationMessage('Correction prompt copied.');
-            }
-            if (msg.command === 'purify') {
-                vscode.commands.executeCommand('oxygen.purifyContext');
-            }
-            if (msg.command === 'summary') {
-                vscode.commands.executeCommand('oxygen.copySessionSummary');
-            }
-        });
-
-        this.panel.onDidDispose(() => {
-            OxygenCompassPanel.currentPanel = undefined;
-        });
-    }
-
-    refresh(activity) {
-        this.activity = activity;
-        this.render();
-    }
-
-    render() {
-        const alerts = this.activity?.hallucinationEvents.slice(-5).reverse() ?? [];
-        const alertHtml = alerts.length
-            ? alerts.map((a) => `<li><strong>${a.level}</strong> (${a.score}) ${a.file ?? ''}<br/><small>${(a.findings[0] ?? '').replace(/</g, '&lt;')}</small></li>`).join('')
-            : '<li>لا تنبيهات بعد — الوضع هادئ ✓</li>';
-
-        this.panel.webview.html = `<!DOCTYPE html>
-<html lang="ar" dir="rtl">
-<head>
-  <meta charset="UTF-8" />
-  <style>
-    body { font-family: sans-serif; padding: 16px; color: #ccc; background: #1e1e1e; }
-    h2 { color: #4ec9b0; }
-    textarea { width: 100%; height: 72px; background: #252526; color: #ddd; border: 1px solid #444; padding: 8px; box-sizing: border-box; }
-    button { margin: 6px 0 6px 6px; padding: 8px 12px; cursor: pointer; border: none; }
-    .primary { background: #0e639c; color: white; }
-    .warn { background: #5a2d2d; color: white; }
-    .ghost { background: #333; color: #ddd; }
-    ul { padding-right: 18px; }
-    li { margin-bottom: 8px; }
-  </style>
-</head>
-<body>
-  <h2>🧭 Agent Compass</h2>
-  <p>رادار الهلوسة + حقن تصحيحي + ملخص الجلسة.</p>
-  <h3>آخر التنبيهات</h3>
-  <ul>${alertHtml}</ul>
-  <label>ملاحظة:</label>
-  <textarea id="note" placeholder="مثال: توقف عن invent paths"></textarea>
-  <div>
-    <button class="primary" onclick="inject()">💉 حقن مصل</button>
-    <button class="warn" onclick="purify()">🫧 تطهير</button>
-    <button class="ghost" onclick="summary()">📋 ملخص الجلسة</button>
-  </div>
-  <script>
-    const vscode = acquireVsCodeApi();
-    function inject() { vscode.postMessage({ command: 'inject', note: document.getElementById('note').value }); }
-    function purify() { vscode.postMessage({ command: 'purify' }); }
-    function summary() { vscode.postMessage({ command: 'summary' }); }
-  </script>
-</body>
-</html>`;
-    }
 }
 
 function deactivate() {
@@ -513,7 +387,7 @@ function deactivate() {
     if (summaryTimer) {
         clearInterval(summaryTimer);
     }
-    flushSessionSummary(false);
+    flushSessionSummary();
 }
 
 module.exports = { activate, deactivate };

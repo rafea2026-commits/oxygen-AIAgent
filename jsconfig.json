@@ -1,15 +1,11 @@
 {
     "compilerOptions": {
-        "module": "Node16",
+        "module": "commonjs",
         "target": "ES2022",
-        "checkJs": true, /* Typecheck .js files. */
+        "checkJs": true,
         "lib": [
             "ES2022"
-        ],
-        "types": [
-            "node",
-            "mocha",
-        ],
+        ]
     },
     "exclude": [
         "node_modules"

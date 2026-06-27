@@ -3,14 +3,6 @@
 const path = require('path');
 const fs = require('fs');
 
-const MARKER_START = '# --- Oxygen Geo-Fence (auto) ---';
-const MARKER_END = '# --- End Oxygen Geo-Fence ---';
-
-/**
- * Find nearest project root walking up from a file.
- * @param {string} filePath
- * @param {string} workspaceRoot
- */
 function findProjectRoot(filePath, workspaceRoot) {
     let dir = path.dirname(filePath);
     const stop = path.resolve(workspaceRoot || dir);
@@ -22,31 +14,21 @@ function findProjectRoot(filePath, workspaceRoot) {
                 return dir;
             }
         }
-
         if (path.resolve(dir) === stop) {
             return stop;
         }
-
         const parent = path.dirname(dir);
         if (parent === dir) {
             break;
         }
         dir = parent;
     }
-
     return stop;
 }
 
-/**
- * Build allowed scope from active file without fixed frontend/backend layout.
- * @param {string} activeFilePath absolute path
- * @param {string} workspaceRoot
- * @param {number} depth parent folders to include above file dir
- */
 function computeScope(activeFilePath, workspaceRoot, depth = 2) {
     const projectRoot = findProjectRoot(activeFilePath, workspaceRoot);
     const fileDir = path.dirname(activeFilePath);
-
     const allowedDirs = new Set();
     let current = fileDir;
 
@@ -62,18 +44,9 @@ function computeScope(activeFilePath, workspaceRoot, depth = 2) {
         current = parent;
     }
 
-    // Always allow common shared/config paths relative to project root
     const sharedPatterns = [
-        'README.md',
-        'LICENSE',
-        '.oxygen/**',
-        'shared/**',
-        'common/**',
-        'lib/**',
-        'utils/**',
-        'types/**',
-        'config/**',
-        'docs/**',
+        'README.md', 'LICENSE', '.oxygen/**',
+        'shared/**', 'common/**', 'lib/**', 'utils/**', 'types/**', 'config/**', 'docs/**',
     ];
 
     const relAllowed = [...allowedDirs].map((d) => {
@@ -89,26 +62,17 @@ function computeScope(activeFilePath, workspaceRoot, depth = 2) {
     };
 }
 
-/**
- * List top-level dirs/files in project to block (outside allowed globs).
- * @param {string} projectRoot
- * @param {string[]} allowedGlobs
- */
 function computeBlockedGlobs(projectRoot, allowedGlobs) {
     if (!fs.existsSync(projectRoot)) {
         return [];
     }
 
     const allowedRoots = new Set(
-        allowedGlobs
-            .map((g) => g.replace(/\/\*\*$/, '').replace(/\*\*$/, ''))
-            .filter(Boolean)
+        allowedGlobs.map((g) => g.replace(/\/\*\*$/, '').replace(/\*\*$/, '')).filter(Boolean)
     );
 
-    const entries = fs.readdirSync(projectRoot, { withFileTypes: true });
     const blocked = [];
-
-    for (const entry of entries) {
+    for (const entry of fs.readdirSync(projectRoot, { withFileTypes: true })) {
         if (entry.name.startsWith('.') && entry.name !== '.oxygen') {
             continue;
         }
@@ -116,7 +80,6 @@ function computeBlockedGlobs(projectRoot, allowedGlobs) {
             blocked.push(`${entry.name}/**`);
             continue;
         }
-
         const rel = entry.name;
         const isAllowed = [...allowedRoots].some((root) => {
             if (root === '**') {
@@ -124,19 +87,13 @@ function computeBlockedGlobs(projectRoot, allowedGlobs) {
             }
             return rel === root || rel.startsWith(`${root}/`) || root.startsWith(`${rel}/`);
         });
-
         if (!isAllowed && entry.isDirectory()) {
             blocked.push(`${rel}/**`);
         }
     }
-
     return blocked;
 }
 
-/**
- * @param {string} workspaceRoot
- * @param {import('./index').GeoScope} scope
- */
 function writeScopeArtifacts(workspaceRoot, scope) {
     const oxygenDir = path.join(workspaceRoot, '.oxygen');
     if (!fs.existsSync(oxygenDir)) {
@@ -147,57 +104,17 @@ function writeScopeArtifacts(workspaceRoot, scope) {
     const payload = {
         generatedAt: new Date().toISOString(),
         scopeLabel: scope.scopeLabel,
-        projectRoot: scope.projectRoot,
-        activeFile: scope.activeFile,
         allowedGlobs: scope.allowedGlobs,
         blockedGlobs: blocked,
-        hint: 'Attach only files matching allowedGlobs when prompting your AI agent.',
+        hint: 'Focus scope for context bundle — informational only, does not block Agent.',
     };
 
     fs.writeFileSync(path.join(oxygenDir, 'context-scope.json'), JSON.stringify(payload, null, 2), 'utf8');
 
-    const ignoreLines = [
-        MARKER_START,
-        `# Scope: ${scope.scopeLabel}`,
-        `# Allowed: ${scope.allowedGlobs.join(', ')}`,
-        ...blocked.map((g) => g),
-        MARKER_END,
-        '',
-    ].join('\n');
-
-    updateIgnoreFile(path.join(workspaceRoot, '.cursorignore'), ignoreLines);
-    updateIgnoreFile(path.join(workspaceRoot, '.copilotignore'), ignoreLines);
-
     return { blocked, payload };
 }
 
-/**
- * @param {string} ignorePath
- * @param {string} section
- */
-function updateIgnoreFile(ignorePath, section) {
-    let existing = '';
-    if (fs.existsSync(ignorePath)) {
-        existing = fs.readFileSync(ignorePath, 'utf8');
-    }
-
-    const startIdx = existing.indexOf(MARKER_START);
-    const endIdx = existing.indexOf(MARKER_END);
-
-    let next;
-    if (startIdx !== -1 && endIdx !== -1) {
-        next = existing.slice(0, startIdx) + section + existing.slice(endIdx + MARKER_END.length);
-    } else {
-        next = (existing.trimEnd() ? existing.trimEnd() + '\n\n' : '') + section;
-    }
-
-    fs.writeFileSync(ignorePath, next, 'utf8');
-}
-
 module.exports = {
-    MARKER_START,
-    MARKER_END,
-    findProjectRoot,
     computeScope,
     computeBlockedGlobs,
     writeScopeArtifacts,

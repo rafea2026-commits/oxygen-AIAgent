@@ -9,6 +9,15 @@ const { extractPhpSkeleton, extractRubySkeleton, extractMarkupSkeleton } = requi
 const { extractGoSkeleton } = require('./extractors/go');
 const { extractRustSkeleton } = require('./extractors/rust');
 const { extractSqlSkeleton } = require('./extractors/sql');
+const { extractDartSkeleton } = require('./extractors/dart');
+const { extractSwiftSkeleton } = require('./extractors/swift');
+const { extractKotlinSkeleton } = require('./extractors/kotlin');
+const { extractObjcSkeleton } = require('./extractors/objc');
+const { extractJavaSkeleton } = require('./extractors/java');
+const { extractGradleSkeleton } = require('./extractors/gradle');
+const { extractYamlSkeleton } = require('./extractors/yaml');
+const { extractXmlMobileSkeleton } = require('./extractors/xmlMobile');
+const { extractJsonSkeleton } = require('./extractors/json');
 
 /**
  * @param {string} source
@@ -34,6 +43,24 @@ function extractSkeleton(source, filePath) {
             return extractRustSkeleton(source, filePath);
         case 'sql':
             return extractSqlSkeleton(source, filePath);
+        case 'dart':
+            return extractDartSkeleton(source, filePath);
+        case 'swift':
+            return extractSwiftSkeleton(source, filePath);
+        case 'kotlin':
+            return extractKotlinSkeleton(source, filePath);
+        case 'objc':
+            return extractObjcSkeleton(source, filePath);
+        case 'java':
+            return extractJavaSkeleton(source, filePath);
+        case 'gradle':
+            return extractGradleSkeleton(source, filePath);
+        case 'yaml':
+            return extractYamlSkeleton(source, filePath);
+        case 'xmlMobile':
+            return extractXmlMobileSkeleton(source, filePath);
+        case 'json':
+            return extractJsonSkeleton(source, filePath);
         default:
             return extractGenericSkeleton(source, filePath);
     }

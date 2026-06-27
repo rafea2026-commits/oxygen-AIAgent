@@ -1,6 +1,6 @@
 'use strict';
 
-const SIGNATURE_KEYWORDS = /\b(import|export|from|require|package|module|namespace|using|include|typedef|struct|enum|union|interface|type|class|trait|impl|protocol|extension|object|companion|data|sealed|abstract|async|await|function|func|fn|def|let|const|var|val|public|private|protected|internal|static|final|override|virtual|native|synchronized|throws|@interface|@RestController|@Service|@Component|macro|delegate|operator|suspend|inline|extern|pub|mod|use|where|associatedtype|init|deinit|subscript|get|set|willSet|didSet)\b/i;
+const SIGNATURE_KEYWORDS = /\b(import|export|from|require|package|module|namespace|using|include|typedef|struct|enum|union|interface|type|class|trait|impl|protocol|extension|object|companion|data|sealed|abstract|async|await|function|func|fn|def|let|const|var|val|public|private|protected|internal|static|final|override|virtual|native|synchronized|throws|@interface|@RestController|@Service|@Component|macro|delegate|operator|suspend|inline|extern|pub|mod|use|where|associatedtype|init|deinit|subscript|get|set|willSet|didSet|mixin|part|library|widget|composable|statelesswidget|statefulwidget)\b/i;
 
 const SIGNATURE_LINE = /^(export\s+)?(default\s+)?(async\s+)?(function|class|interface|type|enum|struct|trait|impl|protocol|namespace|module)\b/i;
 
