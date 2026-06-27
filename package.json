@@ -1,0 +1,191 @@
+{
+  "name": "oxygen-aiagent",
+  "displayName": "Oxygen-AIAgent",
+  "description": "يوفر التوكنز ويطهر سياق الـ AI Agent لحماية جيب المطور وإصلاح التخبيص — VS Code / Cursor / أي IDE متوافق",
+  "version": "0.2.0",
+  "publisher": "oxygen",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Machine Learning"
+  ],
+  "keywords": [
+    "ai",
+    "agent",
+    "tokens",
+    "cursor",
+    "copilot",
+    "context",
+    "skeleton",
+    "hallucination"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "oxygen.copySkeleton",
+        "title": "Oxygen: Copy File Skeleton to Clipboard"
+      },
+      {
+        "command": "oxygen.generateSkeleton",
+        "title": "Oxygen: Generate & Cache Skeleton"
+      },
+      {
+        "command": "oxygen.applyGeoFence",
+        "title": "Oxygen: Apply Context Geo-Fence"
+      },
+      {
+        "command": "oxygen.syncBackbone",
+        "title": "Oxygen: Sync .agent_backbone"
+      },
+      {
+        "command": "oxygen.purifyContext",
+        "title": "Oxygen: Purify Agent Context"
+      },
+      {
+        "command": "oxygen.copySessionSummary",
+        "title": "Oxygen: Copy Session Summary"
+      },
+      {
+        "command": "oxygen.agentCompass",
+        "title": "Oxygen: Open Agent Compass"
+      },
+      {
+        "command": "oxygen.showDashboard",
+        "title": "Oxygen: Show Session Savings"
+      }
+    ],
+    "configuration": {
+      "title": "Oxygen AI Agent",
+      "properties": {
+        "oxygen.pricing.preset": {
+          "type": "string",
+          "default": "composer",
+          "enum": [
+            "composer",
+            "gpt4o",
+            "gpt4oMini",
+            "claudeSonnet",
+            "claudeHaiku",
+            "geminiFlash",
+            "deepseek",
+            "custom"
+          ],
+          "enumDescriptions": [
+            "Cursor Composer (~$1.25/1M input) — default",
+            "OpenAI GPT-4o",
+            "OpenAI GPT-4o mini",
+            "Anthropic Claude Sonnet",
+            "Anthropic Claude Haiku",
+            "Google Gemini Flash",
+            "DeepSeek Chat",
+            "Custom input/output rates below"
+          ],
+          "description": "Pricing preset for savings display."
+        },
+        "oxygen.pricing.inputPerMillion": {
+          "type": "number",
+          "default": 1.25,
+          "description": "Custom USD per 1M input tokens (when preset=custom)."
+        },
+        "oxygen.pricing.outputPerMillion": {
+          "type": "number",
+          "default": 6.0,
+          "description": "Custom USD per 1M output tokens (when preset=custom)."
+        },
+        "oxygen.skeleton.autoCache": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically cache skeletons under .oxygen/skeletons/ when editing files."
+        },
+        "oxygen.geoFence.autoApply": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-update context scope and ignore files based on the active file."
+        },
+        "oxygen.geoFence.scopeDepth": {
+          "type": "number",
+          "default": 2,
+          "minimum": 0,
+          "maximum": 6,
+          "description": "How many parent directories to include in the allowed context scope."
+        },
+        "oxygen.backbone.autoSync": {
+          "type": "boolean",
+          "default": true,
+          "description": "Keep .agent_backbone and IDE rules in sync automatically."
+        },
+        "oxygen.hallucination.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Smart hallucination radar on active file."
+        },
+        "oxygen.hallucination.warningThreshold": {
+          "type": "number",
+          "default": 30,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Radar score to show warning."
+        },
+        "oxygen.hallucination.criticalThreshold": {
+          "type": "number",
+          "default": 55,
+          "minimum": 0,
+          "maximum": 100,
+          "description": "Radar score to show critical alert."
+        },
+        "oxygen.session.autoSummary": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-write .oxygen/session-summary.md during the session."
+        },
+        "oxygen.session.summaryIntervalMinutes": {
+          "type": "number",
+          "default": 3,
+          "minimum": 1,
+          "maximum": 60,
+          "description": "Periodic session summary refresh interval."
+        },
+        "oxygen.flopStop.enabled": {
+          "type": "boolean",
+          "default": true,
+          "description": "Warn when repeated lines or large files may waste tokens."
+        },
+        "oxygen.flopStop.maxResponseTokens": {
+          "type": "number",
+          "default": 4000,
+          "description": "Soft token threshold for large-file warnings."
+        },
+        "oxygen.purify.bonusTokens": {
+          "type": "number",
+          "default": 5000,
+          "description": "Symbolic tokens credited on manual context purify."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "lint": "eslint .",
+    "pretest": "npm run lint",
+    "test": "vscode-test",
+    "test:unit": "node test/unit.smoke.js"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.125.0",
+    "@types/mocha": "^10.0.10",
+    "@types/node": "24.x",
+    "eslint": "^10.5.0",
+    "@vscode/test-cli": "^0.0.15",
+    "@vscode/test-electron": "^3.0.0"
+  },
+  "overrides": {
+    "diff": "^8.0.4",
+    "serialize-javascript": "^7.0.6"
+  }
+}
