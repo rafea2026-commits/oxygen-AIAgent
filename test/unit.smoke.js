@@ -14,8 +14,24 @@ const { writeProjectMap } = require('../src/context/projectMap');
 const { buildContextBundle, minifySelection } = require('../src/context/bundle');
 const { computeScope } = require('../src/scope');
 
+/**
+ * Minimal WorkspaceConfiguration stub for unit tests.
+ * @param {Record<string, unknown>} values
+ * @returns {import('vscode').WorkspaceConfiguration}
+ */
 function mockConfig(values) {
-    return { get: (key, defaultValue) => (key in values ? values[key] : defaultValue) };
+    return {
+        /** @template T @param {string} key @param {T} [defaultValue] @returns {T} */
+        get: (key, defaultValue) => {
+            if (key in values) {
+                return /** @type {T} */ (values[key]);
+            }
+            return /** @type {T} */ (defaultValue);
+        },
+        has: (key) => key in values,
+        inspect: () => undefined,
+        update: async () => undefined,
+    };
 }
 
 let passed = 0;
@@ -54,6 +70,79 @@ test('Dart skeleton', () => {
     const meta = extractSkeletonWithMeta(src, 'lib/main.dart');
     assert.ok(meta.skeleton.includes('class MyApp'));
     assert.ok(meta.skeleton.includes('void main'));
+});
+
+test('Dart skeleton skips method bodies', () => {
+    const src = [
+        "import 'package:flutter/material.dart';",
+        'class HomeScreen extends StatefulWidget {',
+        '  const HomeScreen({super.key});',
+        '  @override',
+        '  State<HomeScreen> createState() => _HomeScreenState();',
+        '}',
+        'class _HomeScreenState extends State<HomeScreen> {',
+        '  @override',
+        '  void initState() { super.initState(); _load(); }',
+        '  Future<void> _load() async { await Future.delayed(Duration.zero); }',
+        '  @override',
+        '  Widget build(BuildContext context) {',
+        '    final theme = Theme.of(context);',
+        '    return Scaffold(body: Text(theme.primaryColor.toString()));',
+        '  }',
+        '}',
+    ].join('\n');
+    const meta = extractSkeletonWithMeta(src, 'lib/home_screen.dart');
+    assert.ok(!meta.skeleton.includes('return Scaffold'), 'must not leak build body');
+    assert.ok(!meta.skeleton.includes('final theme = Theme'), 'must not leak local vars');
+    assert.ok(meta.skeleton.includes('class HomeScreen extends StatefulWidget { /* ... */ }'));
+    assert.ok(meta.skeleton.includes('class _HomeScreenState extends State<HomeScreen> { /* ... */ }'));
+    assert.ok(meta.skeleton.length < src.length * 0.5, 'skeleton should compress at least 50%');
+});
+
+test('Kotlin skeleton', () => {
+    const src = [
+        'package com.example.app',
+        '',
+        'import androidx.compose.runtime.Composable',
+        '',
+        'class MainActivity {',
+        '    fun onCreate() { println("hello") }',
+        '}',
+        '',
+        'fun main() { println("start") }',
+    ].join('\n');
+    const meta = extractSkeletonWithMeta(src, 'app/src/MainActivity.kt');
+    assert.ok(meta.skeleton.includes('package com.example.app'));
+    assert.ok(meta.skeleton.includes('class MainActivity { /* ... */ }'));
+    assert.ok(meta.skeleton.includes('fun main() { /* ... */ }'));
+});
+
+test('Kotlin skeleton skips composable bodies', () => {
+    const src = [
+        'package com.example.ui',
+        '',
+        'import androidx.compose.material3.Text',
+        'import androidx.compose.runtime.Composable',
+        '',
+        '@Composable',
+        'fun GreetingScreen(name: String) {',
+        '    Text(text = "Hello $name")',
+        '    Column {',
+        '        Text(text = "Nested")',
+        '    }',
+        '}',
+        '',
+        'class HomeViewModel {',
+        '    suspend fun loadItems(): List<String> {',
+        '        return listOf("a", "b", "c")',
+        '    }',
+        '}',
+    ].join('\n');
+    const meta = extractSkeletonWithMeta(src, 'app/src/HomeScreen.kt');
+    assert.ok(!meta.skeleton.includes('Hello $name'), 'must not leak composable body');
+    assert.ok(!meta.skeleton.includes('listOf('), 'must not leak function body');
+    assert.ok(meta.skeleton.includes('fun GreetingScreen(name: String) { /* ... */ }'));
+    assert.ok(meta.skeleton.includes('class HomeViewModel { /* ... */ }'));
 });
 
 test('session tracks skeleton savings', () => {

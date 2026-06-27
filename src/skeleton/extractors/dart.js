@@ -1,7 +1,61 @@
 'use strict';
 
+const path = require('path');
+
 /**
- * Dart / Flutter skeleton — classes, widgets, mixins, extensions, enums.
+ * Count `{` / `}` delta on a line (ignores strings and // comments).
+ * @param {string} line
+ */
+function braceDelta(line) {
+    let s = line.replace(/\/\/.*$/, '');
+    s = s.replace(/"(?:\\.|[^"\\])*"/g, '""');
+    s = s.replace(/'(?:\\.|[^'\\])*'/g, "''");
+    return (s.match(/\{/g) || []).length - (s.match(/\}/g) || []).length;
+}
+
+/**
+ * @param {string} line
+ */
+function stripComment(line) {
+    const t = line.replace(/\/\/.*$/, '').trim();
+    if (!t || t.startsWith('///') || t.startsWith('/**') || t.startsWith('*')) {
+        return '';
+    }
+    return t;
+}
+
+/**
+ * @param {string} decl
+ */
+function formatMember(decl) {
+    if (/\{/.test(decl) && /\}/.test(decl)) {
+        return decl.replace(/\{[\s\S]*\}/, '{ /* ... */ }');
+    }
+    if (/\{\s*$/.test(decl)) {
+        return decl.replace(/\{\s*$/, '{ /* ... */ }');
+    }
+    if (/=>\s*/.test(decl)) {
+        return decl.replace(/=>\s*.+$/, '=> /* ... */;');
+    }
+    return decl;
+}
+
+/**
+ * @param {string} decl
+ */
+function collapseDecl(decl) {
+    if (/^enum\s+\w+/.test(decl) && decl.includes('}')) {
+        return decl.replace(/\{[^}]*\}/, '{ /* ... */ }');
+    }
+    if (decl.includes('}') && !decl.endsWith('{')) {
+        return decl.replace(/\{[^}]*\}/, '{ /* ... */ }');
+    }
+    return decl.replace(/\{\s*$/, '{ /* ... */ }');
+}
+
+/**
+ * Dart / Flutter skeleton — imports + collapsed type declarations only.
+ * Skips all class/method bodies via brace-depth tracking.
  * @param {string} source
  * @param {string} [filePath]
  */
@@ -12,63 +66,73 @@ function extractDartSkeleton(source, filePath) {
 
     const lines = source.split(/\r?\n/);
     const output = [];
+    let braceDepth = 0;
     let pending = '';
+    let skippingBody = false;
 
     for (const rawLine of lines) {
-        let line = rawLine.replace(/\/\/.*$/, '').trim();
+        const line = stripComment(rawLine);
         if (!line) {
             continue;
         }
 
-        // Strip single-line doc comments
-        if (line.startsWith('///') || line.startsWith('/**')) {
+        const depthBefore = braceDepth;
+
+        if (skippingBody && depthBefore >= 1) {
+            braceDepth += braceDelta(line);
+            if (braceDepth === 0) {
+                skippingBody = false;
+            }
             continue;
         }
 
-        if (/^(import|export|part|part of|library)\b/.test(line)) {
-            output.push(line.replace(/\s+$/, ''));
+        if (depthBefore === 0 && /^(import|export|part|part of|library)\b/.test(line)) {
+            output.push(line);
             continue;
         }
 
-        // Annotations on their own or attached to declarations
-        if (/^@\w+/.test(line) && !/[({;]/.test(line.replace(/^@\w+\([^)]*\)\s*/, ''))) {
-            pending = line;
+        if (/^@\w+/.test(line) && !/[({;]/.test(line.replace(/^@\w+(\([^)]*\))?\s*/, ''))) {
+            pending = pending ? `${pending} ${line}` : line;
             continue;
         }
 
         const decl = pending ? `${pending} ${line}` : line;
         pending = '';
 
-        if (/^(?:@\w+(?:\([^)]*\))?\s+)*(?:abstract\s+)?(?:class|mixin|extension|enum|typedef)\b/.test(decl)) {
-            if (decl.includes('{')) {
-                const sig = decl.replace(/\{\s*$/, '').trim();
-                output.push(`${sig} { /* ... */ }`);
-            } else {
-                pending = decl;
+        if (depthBefore === 0 && /^void\s+main\s*\(/.test(decl)) {
+            output.push(formatMember(decl));
+            braceDepth += braceDelta(decl);
+            if (decl.includes('{') && !decl.includes('}')) {
+                skippingBody = true;
             }
             continue;
         }
 
-        if (/^(?:@\w+(?:\([^)]*\))?\s+)*(?:static\s+)?(?:Future<[^>]+>|void|Widget|String|int|bool|double|[\w<>,\s?]+)\s+\w+\s*\(/.test(decl)) {
-            output.push(decl.replace(/\{\s*$/, '{ /* ... */ }').replace(/;\s*$/, ';'));
+        const isTypeDecl = /^(?:@\w+(?:\([^)]*\))?\s+)*(?:abstract\s+)?(?:class|mixin|extension|enum|typedef)\b/.test(decl);
+
+        if (depthBefore === 0 && isTypeDecl) {
+            if (!decl.includes('{') && !decl.endsWith(';')) {
+                pending = decl;
+                continue;
+            }
+            output.push(collapseDecl(decl));
+            braceDepth += braceDelta(decl);
+            if (decl.endsWith('{') || (decl.includes('{') && !decl.includes('}'))) {
+                skippingBody = true;
+            }
             continue;
         }
 
-        if (/^void\s+main\s*\(/.test(decl)) {
-            output.push(decl.replace(/\{\s*$/, '{ /* ... */ }'));
-            continue;
-        }
-
-        if (/^const\s+\w+\s*=/.test(decl) || /^final\s+\w+\s*=/.test(decl)) {
-            output.push(decl.replace(/=\s*.+$/, '= /* ... */;'));
-        }
+        braceDepth += braceDelta(decl);
     }
 
     if (pending) {
         output.push(pending);
     }
 
-    const header = filePath ? `// Oxygen Skeleton (Dart/Flutter): ${filePath}\n` : '';
+    const header = filePath
+        ? `// Oxygen Skeleton (Dart/Flutter): ${path.basename(filePath)}\n`
+        : '';
     return header + output.join('\n');
 }
 
