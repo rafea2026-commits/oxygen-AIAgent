@@ -63,7 +63,7 @@ if (fs.existsSync(target)) {
     fs.rmSync(target, { recursive: true, force: true });
 }
 
-copyDir(sourceRoot, target, new Set(['node_modules', '.git', '.vscode-test', 'test', '.oxygen']));
+copyDir(sourceRoot, target, new Set(['node_modules', '.git', '.vscode-test', 'test', '.oxygen', 'package-lock.json']));
 
 const obsolete = readJson(obsoletePath, {});
 let changed = false;
