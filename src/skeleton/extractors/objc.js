@@ -1,47 +1,23 @@
 'use strict';
 
-/**
- * Objective-C skeleton — @interface, @implementation, methods, @property.
- * @param {string} source
- * @param {string} [filePath]
- */
-function extractObjcSkeleton(source, filePath) {
-    if (!source) {
-        return '';
-    }
+const { createBraceExtractor } = require('./shared/brace');
 
-    const lines = source.split(/\r?\n/);
-    const output = [];
-
-    for (const rawLine of lines) {
-        let line = rawLine.replace(/\/\/.*$/, '').trim();
-        if (!line) {
-            continue;
+const extractObjcSkeleton = createBraceExtractor({
+    label: 'Objective-C',
+    headerLine: /^(#import|#include|@import|@property)\b/,
+    typeDecl: /^@(?:interface|implementation|protocol)\b/,
+    topLevelDecl: /^[+-]\s*\([^)]+\)\s*\w+/,
+    mapTypeDecl: (decl) => {
+        if (decl.includes('{')) {
+            return decl.replace(/\{[^}]*\}/, '{ /* ... */ }').replace(/\{\s*$/, '{ /* ... */ }');
         }
-
-        if (/^#import\b|^#include\b|^@import\b/.test(line)) {
-            output.push(line);
-            continue;
+        if (/^@(?:interface|implementation|protocol)\b/.test(decl) && !decl.includes('{')) {
+            return `${decl} { /* ... */ }`;
         }
-
-        if (/^@interface\b|^@implementation\b|^@protocol\b|^@end\b/.test(line)) {
-            output.push(line.replace(/\{\s*$/, ' { /* ... */ }'));
-            continue;
-        }
-
-        if (/^@property\b/.test(line)) {
-            output.push(line);
-            continue;
-        }
-
-        // Instance/class methods: - (ReturnType)name or + (ReturnType)name
-        if (/^[+-]\s*\([^)]+\)\s*\w+/.test(line)) {
-            output.push(line.replace(/\{\s*$/, ' { /* ... */ }').replace(/;\s*$/, ';'));
-        }
-    }
-
-    const header = filePath ? `// Oxygen Skeleton (Objective-C): ${filePath}\n` : '';
-    return header + output.join('\n');
-}
+        return null;
+    },
+    mapTopLevelDecl: (decl) => decl.replace(/\{[^}]*\}/, '{ /* ... */ }').replace(/\{\s*$/, '{ /* ... */ }'),
+    skipLine: (line) => line === '@end',
+});
 
 module.exports = { extractObjcSkeleton };

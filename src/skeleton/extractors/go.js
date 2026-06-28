@@ -1,6 +1,10 @@
 'use strict';
 
+const path = require('path');
+const { extractBraceSkeleton, braceDelta, stripLineComment } = require('./shared/brace');
+
 /**
+ * Go skeleton — package, imports, collapsed type and func declarations.
  * @param {string} source
  * @param {string} [filePath]
  */
@@ -11,52 +15,83 @@ function extractGoSkeleton(source, filePath) {
 
     const lines = source.split(/\r?\n/);
     const output = [];
-    let pending = '';
+    let braceDepth = 0;
+    let parenDepth = 0;
+    let skippingBody = false;
+    let skippingImport = false;
 
     for (const rawLine of lines) {
-        let line = rawLine.replace(/\/\/.*$/, '').trim();
+        const line = stripLineComment(rawLine);
         if (!line) {
             continue;
         }
 
-        if (/^package\s+\w+/.test(line)) {
-            output.push(line);
-            continue;
-        }
+        const depthBefore = braceDepth;
 
-        if (/^import\s/.test(line) || line === '(' || line === ')') {
-            if (line !== '(' && line !== ')') {
-                output.push(line.endsWith('(') ? line : line.replace(/\)$/, ''));
+        if (skippingImport) {
+            parenDepth += (line.match(/\(/g) || []).length - (line.match(/\)/g) || []).length;
+            if (parenDepth <= 0) {
+                skippingImport = false;
             }
             continue;
         }
 
-        if (/^(type|func|interface|const|var)\b/.test(line)) {
-            if (line.includes('{')) {
-                if (/^func\s/.test(line)) {
-                    output.push(line.replace(/\{\s*$/, '{ /* ... */ }'));
-                } else if (/^type\s+\w+\s+(struct|interface)\s*\{/.test(line)) {
-                    const name = line.match(/^type\s+(\w+)/)?.[1] ?? 'Type';
-                    const kind = line.includes('interface') ? 'interface' : 'struct';
-                    output.push(`type ${name} ${kind} { /* fields */ }`);
-                } else {
-                    output.push(line.replace(/\{\s*$/, '{ /* ... */ }'));
+        if (skippingBody && depthBefore >= 1) {
+            braceDepth += braceDelta(line);
+            if (braceDepth === 0) {
+                skippingBody = false;
+            }
+            continue;
+        }
+
+        if (depthBefore === 0 && /^package\s+\w+/.test(line)) {
+            output.push(line);
+            continue;
+        }
+
+        if (depthBefore === 0 && /^import\s/.test(line)) {
+            if (line.includes('(')) {
+                output.push('import ( /* ... */ )');
+                parenDepth = (line.match(/\(/g) || []).length - (line.match(/\)/g) || []).length;
+                if (parenDepth > 0) {
+                    skippingImport = true;
                 }
-            } else if (line.endsWith('{')) {
-                pending = line;
             } else {
                 output.push(line);
             }
             continue;
         }
 
-        if (pending) {
-            output.push(pending.replace(/\{\s*$/, '{ /* ... */ }'));
-            pending = '';
+        if (depthBefore === 0 && /^(type|func|interface|const|var)\b/.test(line)) {
+            if (/^type\s+\w+\s+(struct|interface)\s*\{/.test(line)) {
+                const name = line.match(/^type\s+(\w+)/)?.[1] ?? 'Type';
+                const kind = line.includes('interface') ? 'interface' : 'struct';
+                output.push(`type ${name} ${kind} { /* ... */ }`);
+                braceDepth += braceDelta(line);
+                if (line.endsWith('{') || (line.includes('{') && !line.includes('}'))) {
+                    skippingBody = true;
+                }
+                continue;
+            }
+
+            if (line.includes('{')) {
+                output.push(line.replace(/\{[^}]*\}/, '{ /* ... */ }').replace(/\{\s*$/, '{ /* ... */ }'));
+                braceDepth += braceDelta(line);
+                if (line.endsWith('{') || (line.includes('{') && !line.includes('}'))) {
+                    skippingBody = true;
+                }
+            } else {
+                output.push(line);
+            }
+            continue;
         }
+
+        braceDepth += braceDelta(line);
     }
 
-    const header = filePath ? `// Oxygen Skeleton (Go): ${filePath}\n` : '';
+    const header = filePath
+        ? `// Oxygen Skeleton (Go): ${path.basename(filePath)}\n`
+        : '';
     return header + output.join('\n');
 }
 

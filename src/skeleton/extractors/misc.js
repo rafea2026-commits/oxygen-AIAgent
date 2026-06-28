@@ -1,34 +1,26 @@
 'use strict';
 
+const { createBraceExtractor } = require('./shared/brace');
+const { createIndentExtractor } = require('./shared/indent');
 const { extractGenericSkeleton } = require('./generic');
 
-/** @param {string} source @param {string} [filePath] */
-function extractPhpSkeleton(source, filePath) {
-    return extractGenericSkeleton(source, filePath);
-}
+const extractPhpSkeleton = createBraceExtractor({
+    label: 'PHP',
+    headerLine: /^(<\?php|namespace|use|require|include|require_once|include_once)\b/,
+    annotationLine: /^#\[\w+/,
+    typeDecl: /^(?:abstract\s+|final\s+)?(?:class|interface|trait|enum)\b/,
+    topLevelDecl: /^(?:public\s+|private\s+|protected\s+|static\s+|async\s+)?function\s+\w+\s*\(/,
+});
 
-/** @param {string} source @param {string} [filePath] */
-function extractRubySkeleton(source, filePath) {
-    if (!source) {
-        return '';
-    }
-
-    const lines = source.split(/\r?\n/);
-    const output = [];
-
-    for (const rawLine of lines) {
-        const trimmed = rawLine.trim();
-        if (!trimmed || trimmed.startsWith('#')) {
-            continue;
-        }
-        if (/^(require|include|module|class|def|attr_|extend|prepend|private|protected|public)\b/.test(trimmed)) {
-            output.push(/^(class|module|def)\b/.test(trimmed) ? trimmed + ' ... end' : trimmed);
-        }
-    }
-
-    const header = filePath ? `# Oxygen Skeleton: ${filePath}\n` : '';
-    return header + output.join('\n');
-}
+const extractRubySkeleton = createIndentExtractor({
+    label: 'Ruby',
+    commentPrefix: '#',
+    headerLine: /^(require|require_relative|include|extend|prepend|class\s*<<)\b/,
+    blockStart: /^(module|class|def|define_method|namespace)\b/,
+    useEndKeyword: true,
+    blockEnd: /^end\b/,
+    formatBlockStart: (line) => `${line} ... end`,
+});
 
 /** @param {string} source @param {string} [filePath] */
 function extractMarkupSkeleton(source, filePath) {
@@ -42,8 +34,40 @@ function extractMarkupSkeleton(source, filePath) {
     return header + unique.join('\n');
 }
 
+/** @param {string} source @param {string} [filePath] */
+function extractLuaSkeleton(source, filePath) {
+    return extractGenericSkeleton(source, filePath);
+}
+
+/** @param {string} source @param {string} [filePath] */
+function extractShellSkeleton(source, filePath) {
+    if (!source) {
+        return '';
+    }
+
+    const lines = source.split(/\r?\n/);
+    const output = [];
+
+    for (const rawLine of lines) {
+        const trimmed = rawLine.trim();
+        if (!trimmed || trimmed.startsWith('#')) {
+            continue;
+        }
+        if (/^(function\s+\w+|function\s*\(|if\s|for\s|while\s|case\s|select\s|\w+\(\))\b/.test(trimmed)) {
+            output.push(trimmed.replace(/\{\s*$/, '{ /* ... */ }').replace(/\s*;\s*do\s*$/, ' do ... done'));
+        } else if (/^(source|\.|export|alias|local|declare|readonly)\b/.test(trimmed)) {
+            output.push(trimmed);
+        }
+    }
+
+    const header = filePath ? `# Oxygen Skeleton (Shell): ${filePath}\n` : '';
+    return header + output.join('\n');
+}
+
 module.exports = {
     extractPhpSkeleton,
     extractRubySkeleton,
     extractMarkupSkeleton,
+    extractLuaSkeleton,
+    extractShellSkeleton,
 };

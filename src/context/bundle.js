@@ -6,10 +6,14 @@ const { estimateTokens, minifyText } = require('../core/tokens');
 const { extractSkeletonWithMeta } = require('../skeleton');
 
 const SOURCE_EXT = new Set([
-    '.dart', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs',
+    '.dart', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.vue', '.svelte',
     '.kt', '.kts', '.java', '.swift', '.m', '.mm',
-    '.py', '.go', '.rs', '.php', '.rb', '.cs',
-    '.yaml', '.yml', '.json', '.xml', '.gradle', '.sql',
+    '.py', '.pyw', '.go', '.rs', '.php', '.rb', '.erb', '.cs',
+    '.c', '.h', '.cpp', '.cc', '.cxx', '.hpp', '.scala', '.groovy',
+    '.ex', '.exs', '.hs', '.lua', '.sql',
+    '.yaml', '.yml', '.toml', '.json', '.jsonc', '.xml', '.gradle',
+    '.html', '.htm', '.css', '.scss', '.sass', '.less',
+    '.sh', '.bash', '.zsh', '.ps1', '.bat', '.cmd',
 ]);
 
 /**

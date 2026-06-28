@@ -60,9 +60,85 @@ test('pricing preset composer', () => {
 
 test('skeleton compresses JS', () => {
     const src = `import fs from 'fs';\n\nexport function greet(name) {\n  console.log(name);\n  return name;\n}\n\nexport class User {\n  constructor(id) { this.id = id; }\n  save() { return fs.writeFileSync('x', 'y'); }\n}`;
-    const meta = extractSkeletonWithMeta(src, 'a.ts');
+    const meta = extractSkeletonWithMeta(src, 'src/utils.js');
+    assert.strictEqual(meta.languageGroup, 'javascript');
     assert.ok(meta.skeleton.includes('greet'));
     assert.ok(meta.skeleton.length < src.length);
+});
+
+test('JavaScript skeleton skips function bodies', () => {
+    const src = [
+        "import express from 'express';",
+        'export async function fetchUser(id) {',
+        '  const res = await fetch(`/api/users/${id}`);',
+        '  return res.json();',
+        '}',
+        'export class UserService {',
+        '  constructor(db) { this.db = db; }',
+        '  save(user) { return this.db.insert(user); }',
+        '}',
+        'const bootstrap = () => { console.log("ready"); };',
+    ].join('\n');
+    const meta = extractSkeletonWithMeta(src, 'src/server.js');
+    assert.strictEqual(meta.languageGroup, 'javascript');
+    assert.ok(meta.skeleton.includes('export async function fetchUser(id) { /* ... */ }'));
+    assert.ok(meta.skeleton.includes('export class UserService { /* ... */ }'));
+    assert.ok(!meta.skeleton.includes('fetch(`/api/users'));
+    assert.ok(!meta.skeleton.includes('console.log("ready")'));
+});
+
+test('C++ skeleton skips function bodies', () => {
+    const src = [
+        '#include <iostream>',
+        '#include <vector>',
+        'namespace app {',
+        'class UserRepo {',
+        'public:',
+        '    std::vector<std::string> loadAll() {',
+        '        return {"alice", "bob", "secret"};',
+        '    }',
+        '};',
+        'void run() { std::cout << "hidden"; }',
+        '}',
+        'int main() { run(); return 0; }',
+    ].join('\n');
+    const meta = extractSkeletonWithMeta(src, 'src/main.cpp');
+    assert.strictEqual(meta.languageGroup, 'cpp');
+    assert.ok(meta.skeleton.includes('#include <iostream>'));
+    assert.ok(meta.skeleton.includes('namespace app { /* ... */ }'));
+    assert.ok(meta.skeleton.includes('int main() { /* ... */ }'));
+    assert.ok(!meta.skeleton.includes('"secret"'));
+    assert.ok(!meta.skeleton.includes('std::cout'));
+});
+
+test('HTML skeleton keeps structure not inline scripts', () => {
+    const src = [
+        '<!DOCTYPE html>',
+        '<html lang="en">',
+        '<head>',
+        '  <title>Dashboard</title>',
+        '  <link rel="stylesheet" href="/app.css">',
+        '  <script src="/vendor.js"></script>',
+        '</head>',
+        '<body>',
+        '  <main id="app" class="container primary">',
+        '    <section class="hero">Hello</section>',
+        '    <script>',
+        '      const secret = "do-not-leak";',
+        '      initApp(secret);',
+        '    </script>',
+        '  </main>',
+        '</body>',
+        '</html>',
+    ].join('\n');
+    const meta = extractSkeletonWithMeta(src, 'public/index.html');
+    assert.strictEqual(meta.languageGroup, 'html');
+    assert.ok(meta.skeleton.includes('<title>Dashboard</title>'));
+    assert.ok(meta.skeleton.includes('<link rel="stylesheet" href="/app.css" />'));
+    assert.ok(meta.skeleton.includes('<script src="/vendor.js"></script>'));
+    assert.ok(meta.skeleton.includes('id="app"'));
+    assert.ok(!meta.skeleton.includes('do-not-leak'));
+    assert.ok(!meta.skeleton.includes('initApp(secret)'));
 });
 
 test('Dart skeleton', () => {
@@ -143,6 +219,137 @@ test('Kotlin skeleton skips composable bodies', () => {
     assert.ok(!meta.skeleton.includes('listOf('), 'must not leak function body');
     assert.ok(meta.skeleton.includes('fun GreetingScreen(name: String) { /* ... */ }'));
     assert.ok(meta.skeleton.includes('class HomeViewModel { /* ... */ }'));
+});
+
+test('Java skeleton skips method bodies', () => {
+    const src = [
+        'package com.example;',
+        'import java.util.List;',
+        'public class UserRepo {',
+        '    public List<String> loadAll() {',
+        '        return List.of("a", "b", "c");',
+        '    }',
+        '}',
+    ].join('\n');
+    const meta = extractSkeletonWithMeta(src, 'app/src/UserRepo.java');
+    assert.ok(meta.skeleton.includes('public class UserRepo { /* ... */ }'));
+    assert.ok(!meta.skeleton.includes('List.of('));
+});
+
+test('Swift skeleton skips view bodies', () => {
+    const src = [
+        'import SwiftUI',
+        'struct ContentView: View {',
+        '    var body: some View {',
+        '        Text("Hello")',
+        '    }',
+        '}',
+    ].join('\n');
+    const meta = extractSkeletonWithMeta(src, 'Sources/ContentView.swift');
+    assert.ok(meta.skeleton.includes('struct ContentView: View { /* ... */ }'));
+    assert.ok(!meta.skeleton.includes('Text("Hello")'));
+});
+
+test('Go skeleton skips function bodies', () => {
+    const src = [
+        'package main',
+        'import "fmt"',
+        'func main() {',
+        '    fmt.Println("secret")',
+        '}',
+        'type User struct {',
+        '    Name string',
+        '}',
+    ].join('\n');
+    const meta = extractSkeletonWithMeta(src, 'main.go');
+    assert.ok(meta.skeleton.includes('func main() { /* ... */ }'));
+    assert.ok(meta.skeleton.includes('type User struct { /* ... */ }'));
+    assert.ok(!meta.skeleton.includes('fmt.Println'));
+});
+
+test('Rust skeleton skips function bodies', () => {
+    const src = [
+        'use std::collections::HashMap;',
+        'pub fn greet(name: &str) {',
+        '    println!("Hello {}", name);',
+        '}',
+        'pub struct User { id: u64 }',
+    ].join('\n');
+    const meta = extractSkeletonWithMeta(src, 'src/lib.rs');
+    assert.ok(meta.skeleton.includes('pub fn greet(name: &str) { /* ... */ }'));
+    assert.ok(!meta.skeleton.includes('println!'));
+});
+
+test('Python skeleton skips indented bodies', () => {
+    const src = [
+        'import os',
+        'class Worker:',
+        '    def run(self):',
+        '        print("secret")',
+        '        return 42',
+    ].join('\n');
+    const meta = extractSkeletonWithMeta(src, 'worker.py');
+    assert.ok(meta.skeleton.includes('class Worker: ...'));
+    assert.ok(meta.skeleton.includes('def run(self): ...'));
+    assert.ok(!meta.skeleton.includes('print("secret")'));
+});
+
+test('Elixir skeleton skips do blocks', () => {
+    const src = [
+        'defmodule MyApp.User do',
+        '  def hello(name) do',
+        '    IO.puts("secret")',
+        '  end',
+        'end',
+    ].join('\n');
+    const meta = extractSkeletonWithMeta(src, 'lib/my_app/user.ex');
+    assert.ok(meta.skeleton.includes('defmodule MyApp.User'));
+    assert.ok(!meta.skeleton.includes('IO.puts'));
+});
+
+test('Haskell skeleton keeps signatures only', () => {
+    const src = [
+        'module MyApp where',
+        'import Data.Text',
+        'data User = User { name :: String }',
+        'greet :: String -> String',
+        'greet name = "Hello " ++ name',
+    ].join('\n');
+    const meta = extractSkeletonWithMeta(src, 'src/MyApp.hs');
+    assert.ok(meta.skeleton.includes('module MyApp where'));
+    assert.ok(meta.skeleton.includes('data User = ...'));
+    assert.ok(!meta.skeleton.includes('"Hello " ++ name'));
+});
+
+test('language groups cover mobile and backend extensions', () => {
+    const { detectLanguageGroup } = require('../src/skeleton/language');
+    const cases = {
+        'lib/main.dart': 'dart',
+        'App.kt': 'kotlin',
+        'Main.java': 'java',
+        'View.swift': 'swift',
+        'main.go': 'go',
+        'lib.rs': 'rust',
+        'app.py': 'python',
+        'user.ex': 'elixir',
+        'Main.hs': 'haskell',
+        'script.lua': 'lua',
+        'run.sh': 'shell',
+        'App.js': 'javascript',
+        'App.jsx': 'javascript',
+        'main.cpp': 'cpp',
+        'Engine.hpp': 'cpp',
+        'index.html': 'html',
+        'App.tsx': 'cLike',
+        'App.vue': 'cLike',
+        'schema.sql': 'sql',
+        'pubspec.yaml': 'yaml',
+        'AndroidManifest.xml': 'xmlMobile',
+        'strings.arb': 'json',
+    };
+    for (const [file, expected] of Object.entries(cases)) {
+        assert.strictEqual(detectLanguageGroup(file), expected, file);
+    }
 });
 
 test('session tracks skeleton savings', () => {

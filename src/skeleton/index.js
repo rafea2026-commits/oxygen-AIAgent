@@ -4,8 +4,17 @@ const path = require('path');
 const { detectLanguageGroup } = require('./language');
 const { extractGenericSkeleton } = require('./extractors/generic');
 const { extractCLikeSkeleton } = require('./extractors/cLike');
+const { extractJavaScriptSkeleton } = require('./extractors/javascript');
+const { extractCppSkeleton } = require('./extractors/cpp');
+const { extractHtmlSkeleton } = require('./extractors/html');
 const { extractPythonSkeleton } = require('./extractors/python');
-const { extractPhpSkeleton, extractRubySkeleton, extractMarkupSkeleton } = require('./extractors/misc');
+const {
+    extractPhpSkeleton,
+    extractRubySkeleton,
+    extractMarkupSkeleton,
+    extractLuaSkeleton,
+    extractShellSkeleton,
+} = require('./extractors/misc');
 const { extractGoSkeleton } = require('./extractors/go');
 const { extractRustSkeleton } = require('./extractors/rust');
 const { extractSqlSkeleton } = require('./extractors/sql');
@@ -18,6 +27,8 @@ const { extractGradleSkeleton } = require('./extractors/gradle');
 const { extractYamlSkeleton } = require('./extractors/yaml');
 const { extractXmlMobileSkeleton } = require('./extractors/xmlMobile');
 const { extractJsonSkeleton } = require('./extractors/json');
+const { extractElixirSkeleton } = require('./extractors/elixir');
+const { extractHaskellSkeleton } = require('./extractors/haskell');
 
 /**
  * @param {string} source
@@ -29,6 +40,12 @@ function extractSkeleton(source, filePath) {
     switch (group) {
         case 'cLike':
             return extractCLikeSkeleton(source, filePath);
+        case 'javascript':
+            return extractJavaScriptSkeleton(source, filePath);
+        case 'cpp':
+            return extractCppSkeleton(source, filePath);
+        case 'html':
+            return extractHtmlSkeleton(source, filePath);
         case 'python':
             return extractPythonSkeleton(source, filePath);
         case 'php':
@@ -61,6 +78,14 @@ function extractSkeleton(source, filePath) {
             return extractXmlMobileSkeleton(source, filePath);
         case 'json':
             return extractJsonSkeleton(source, filePath);
+        case 'elixir':
+            return extractElixirSkeleton(source, filePath);
+        case 'haskell':
+            return extractHaskellSkeleton(source, filePath);
+        case 'lua':
+            return extractLuaSkeleton(source, filePath);
+        case 'shell':
+            return extractShellSkeleton(source, filePath);
         default:
             return extractGenericSkeleton(source, filePath);
     }
