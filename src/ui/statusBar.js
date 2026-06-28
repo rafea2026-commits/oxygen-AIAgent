@@ -18,22 +18,29 @@ function createStatusBar(vscode, session) {
         ].join('\n');
     }
 
+    /**
+     * @param {number} [activeTokens]
+     * @param {boolean} [isLarge]
+     */
     function render(activeTokens, isLarge) {
         const tokens = session.getTotalSavedTokens();
         const usd = session.getTotalSavedUSD();
+        const delta = session.getLastDeltaTokens();
         const savedK = tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : `${tokens}`;
+        const deltaSuffix = delta > 0 ? ` (+${delta >= 1000 ? `${(delta / 1000).toFixed(1)}k` : delta})` : '';
 
         if (tokens === 0 && !activeTokens) {
             item.text = 'O2 Oxygen | scanning workspace';
         } else if (isLarge) {
-            item.text = `O2 Oxygen | -${savedK} tok | file large`;
+            item.text = `O2 Oxygen | -${savedK} tok${deltaSuffix} | file large`;
         } else {
-            item.text = `O2 Oxygen | -${savedK} tok | $${usd.toFixed(3)} saved`;
+            item.text = `O2 Oxygen | -${savedK} tok${deltaSuffix} | $${usd.toFixed(3)} saved`;
         }
 
         item.tooltip = [
             'Oxygen Token Saver',
             `Saved this session: ~${tokens.toLocaleString()} tokens ($${usd.toFixed(4)})`,
+            delta > 0 ? `Last update: +${delta.toLocaleString()} tokens` : '',
             activeTokens
                 ? `Active file: ~${activeTokens.toLocaleString()} tokens`
                 : (tokens > 0 ? 'Auto-indexed from workspace (no file open needed)' : 'Indexing workspace...'),

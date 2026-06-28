@@ -51,6 +51,11 @@ console.log('Oxygen Token Saver tests\n');
 test('estimateTokens', () => {
     assert.strictEqual(estimateTokens(''), 0);
     assert.strictEqual(estimateTokens('abcd'), 1);
+    const code = 'export function foo(a, b) { return a + b; }';
+    const simple = estimateTokens('abcd');
+    const codeTokens = estimateTokens(code);
+    assert.ok(codeTokens > simple, 'code should estimate more tokens than 4 chars');
+    assert.ok(codeTokens < code.length, 'estimate should be less than char count');
 });
 
 test('pricing preset composer', () => {
@@ -219,6 +224,25 @@ test('Kotlin skeleton skips composable bodies', () => {
     assert.ok(!meta.skeleton.includes('listOf('), 'must not leak function body');
     assert.ok(meta.skeleton.includes('fun GreetingScreen(name: String) { /* ... */ }'));
     assert.ok(meta.skeleton.includes('class HomeViewModel { /* ... */ }'));
+});
+
+test('Kotlin skeleton collapses data class and import blocks', () => {
+    const src = [
+        'package com.example',
+        'import a.A',
+        'import b.B',
+        'import c.C',
+        'import d.D',
+        'import e.E',
+        'import f.F',
+        'data class User(val id: String, val email: String, val name: String)',
+        '@Composable',
+        'fun Screen() { Text("hi") }',
+    ].join('\n');
+    const meta = extractSkeletonWithMeta(src, 'app/Main.kt');
+    assert.ok(meta.skeleton.includes('import ... (6 imports)'), 'long import block collapsed');
+    assert.ok(meta.skeleton.includes('data class User(/* 3 props */)'));
+    assert.ok(!meta.skeleton.includes('Text("hi")'));
 });
 
 test('Java skeleton skips method bodies', () => {
@@ -448,6 +472,42 @@ test('session tracks skeleton savings', () => {
     const r = session.recordSkeleton('file:///a.js', raw, skel);
     assert.ok(r.savedTokens > 0);
     assert.ok(session.getTotalSavedTokens() > 0);
+});
+
+test('session exposes last delta tokens', () => {
+    const session = new SessionTracker(resolvePricing(mockConfig({})));
+    session.recordSkeleton('file:///a.js', 'x'.repeat(400), 'x');
+    assert.strictEqual(session.getLastDeltaTokens(), session.getTotalSavedTokens());
+    session.recordSkeleton('file:///a.js', 'x'.repeat(400), 'x');
+    assert.strictEqual(session.getLastDeltaTokens(), 0, 're-processing same file has zero delta');
+});
+
+test('YAML skeleton collapses dependency lists', () => {
+    const src = [
+        'name: demo',
+        'dependencies:',
+        '  http: ^1.0.0',
+        '  provider: ^6.0.0',
+        '  shared_preferences: ^2.0.0',
+        'dev_dependencies:',
+        '  flutter_test:',
+        '    sdk: flutter',
+    ].join('\n');
+    const meta = extractSkeletonWithMeta(src, 'pubspec.yaml');
+    assert.ok(meta.skeleton.includes('dependencies: [http, provider, shared_preferences]'));
+    assert.ok(!meta.skeleton.includes('^1.0.0'));
+});
+
+test('JSON skeleton lists dependency keys only', () => {
+    const src = JSON.stringify({
+        name: 'demo',
+        version: '1.0.0',
+        dependencies: { react: '^18.0.0', express: '^4.0.0', lodash: '^4.0.0' },
+        scripts: { start: 'node index.js', test: 'jest' },
+    }, null, 2);
+    const meta = extractSkeletonWithMeta(src, 'package.json');
+    assert.ok(meta.skeleton.includes('"dependencies": [react, express, lodash]'));
+    assert.ok(!meta.skeleton.includes('^18.0.0'));
 });
 
 test('processFile caches skeleton', () => {

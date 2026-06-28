@@ -126,9 +126,30 @@ function isIndexableFile(fsPath) {
     return SOURCE_EXT.has(ext);
 }
 
+/** Extensions for file-system watcher (avoids watching all of node_modules). */
+const WATCH_EXTENSIONS = [...SOURCE_EXT]
+    .map((e) => e.replace(/^\./, ''))
+    .sort()
+    .join(',');
+
+const WATCH_FILE_GLOB = `**/*.{${WATCH_EXTENSIONS}}`;
+
+/** Framework config files without a standard extension. */
+const WATCH_NAMED_GLOBS = [
+    '**/Podfile',
+    '**/Gemfile',
+    '**/Fastfile',
+    '**/Makefile',
+    '**/CMakeLists.txt',
+    '**/Dockerfile',
+    '**/Procfile',
+];
+
 module.exports = {
     INDEX_EXCLUDE_GLOB,
     SOURCE_EXT,
+    WATCH_FILE_GLOB,
+    WATCH_NAMED_GLOBS,
     FRAMEWORK_BASENAME_TO_GROUP,
     isIndexableFile,
 };

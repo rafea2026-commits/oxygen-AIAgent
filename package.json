@@ -1,8 +1,8 @@
 {
   "name": "oxygen-aiagent",
   "displayName": "Oxygen — Token Saver",
-  "description": "موفر توكن احترافي للـ AI Agent — skeletons، ضغط، فهرسة، وتتبع التوفير",
-  "version": "1.0.1",
+  "description": "Professional token saver for AI Agents — skeletons, compression, workspace indexing, and savings tracking.",
+  "version": "1.0.2",
   "publisher": "oxygen",
   "license": "MIT",
   "engines": {

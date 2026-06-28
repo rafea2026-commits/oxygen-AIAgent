@@ -17,6 +17,8 @@ class SessionTracker {
         this.fileSavedTokens = new Map();
         /** @type {Map<string, number>} */
         this.fileCompression = new Map();
+        /** Last per-file token delta (for status bar). */
+        this.lastDeltaTokens = 0;
     }
 
     setPricing(pricing) {
@@ -60,6 +62,8 @@ class SessionTracker {
         const deltaTokens = newSavedTokens - prevTokens;
         const deltaUSD = newSavedUSD - prevUSD;
 
+        this.lastDeltaTokens = deltaTokens;
+
         if (deltaTokens > 0) {
             this.totalSavedTokens += deltaTokens;
         } else if (deltaTokens < 0) {
@@ -92,12 +96,17 @@ class SessionTracker {
         return this.fileCompression.get(uri);
     }
 
+    getLastDeltaTokens() {
+        return this.lastDeltaTokens;
+    }
+
     reset() {
         this.totalSavedUSD = 0;
         this.totalSavedTokens = 0;
         this.fileSavingsUSD.clear();
         this.fileSavedTokens.clear();
         this.fileCompression.clear();
+        this.lastDeltaTokens = 0;
     }
 }
 

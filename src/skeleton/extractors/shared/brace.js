@@ -167,7 +167,11 @@ function extractBraceSkeleton(source, filePath, config) {
                 continue;
             }
             if (!decl.includes('{') && decl.endsWith(')')) {
-                output.push(`${decl} { /* ... */ }`);
+                let mapped = config.mapTypeDecl ? config.mapTypeDecl(decl) : null;
+                if (mapped === null) {
+                    mapped = `${decl} { /* ... */ }`;
+                }
+                output.push(mapped);
                 continue;
             }
 

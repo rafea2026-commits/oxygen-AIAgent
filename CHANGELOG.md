@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.2] - 2026-06-28
+
+### Improved
+- **Token estimation** — code-aware counting (identifiers, operators) instead of flat `chars/4`.
+- **Kotlin** — collapses long import blocks, `data class` props, and `@Composable` signatures.
+- **YAML/JSON** — dependency sections show key names only, not versions.
+- **Status bar** — shows last update delta `(+N tok)` when files change.
+- **File watcher** — scoped to source extensions + framework files (faster on large repos).
+
+### Docs
+- README updated with `watchFiles`, `Reset Session Counter`, and token estimation note.
+
 ## [1.0.1] - 2026-06-28
 
 ### Fixed

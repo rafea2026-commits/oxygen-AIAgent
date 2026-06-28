@@ -15,6 +15,7 @@ const { SessionActivity, buildSessionSummary, writeSessionSummary } = require('.
 const { writeProjectMap, entryFromProcessResult } = require('./src/context/projectMap');
 const { detectFramework, writeFrameworkInfo } = require('./src/context/framework');
 const { indexWorkspace, buildContextBundle, minifySelection, isSourceFile } = require('./src/context/bundle');
+const { WATCH_FILE_GLOB, WATCH_NAMED_GLOBS } = require('./src/context/frameworkFiles');
 
 /** @type {SessionTracker | undefined} */
 let session;
@@ -231,7 +232,6 @@ function setupFileWatcher(context) {
         return;
     }
 
-    const watcher = vscode.workspace.createFileSystemWatcher('**/*');
     const onDiskChange = (uri) => {
         if (uri.scheme !== 'file') {
             return;
@@ -239,9 +239,18 @@ function setupFileWatcher(context) {
         scheduleDiskProcess(uri.fsPath);
     };
 
+    const watcher = vscode.workspace.createFileSystemWatcher(WATCH_FILE_GLOB);
     watcher.onDidChange(onDiskChange);
     watcher.onDidCreate(onDiskChange);
     context.subscriptions.push(watcher);
+
+    for (const pattern of WATCH_NAMED_GLOBS) {
+        const namedWatcher = vscode.workspace.createFileSystemWatcher(pattern);
+        namedWatcher.onDidChange(onDiskChange);
+        namedWatcher.onDidCreate(onDiskChange);
+        context.subscriptions.push(namedWatcher);
+    }
+
     context.subscriptions.push({
         dispose: () => {
             for (const timer of fileWatchTimers.values()) {
