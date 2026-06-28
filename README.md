@@ -87,4 +87,4 @@ Status bar numbers use a **code-aware estimate** (identifiers + operators), clos
 
 ---
 
-**v1.0.4** — Token Saver only. Passive mode.
+**v1.0.5** — Token Saver only. Passive mode.

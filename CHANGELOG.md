@@ -1,5 +1,10 @@
 # Changelog
 
+## [1.0.5] - 2026-06-28
+
+### Added
+- Extension icon (`icon.png`).
+
 ## [1.0.4] - 2026-06-28
 
 ### Added
