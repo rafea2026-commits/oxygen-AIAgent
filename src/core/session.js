@@ -91,6 +91,14 @@ class SessionTracker {
     getCompression(uri) {
         return this.fileCompression.get(uri);
     }
+
+    reset() {
+        this.totalSavedUSD = 0;
+        this.totalSavedTokens = 0;
+        this.fileSavingsUSD.clear();
+        this.fileSavedTokens.clear();
+        this.fileCompression.clear();
+    }
 }
 
 module.exports = { SessionTracker };

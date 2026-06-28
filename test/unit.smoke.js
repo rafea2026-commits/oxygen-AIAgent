@@ -390,6 +390,15 @@ test('workspace index pattern updates session without opening files', () => {
     }
 });
 
+test('session counter resets to zero', () => {
+    const session = new SessionTracker(resolvePricing(mockConfig({})));
+    session.recordSkeleton('file:///a.js', 'x'.repeat(400), 'x');
+    assert.ok(session.getTotalSavedTokens() > 0);
+    session.reset();
+    assert.strictEqual(session.getTotalSavedTokens(), 0);
+    assert.strictEqual(session.getTotalSavedUSD(), 0);
+});
+
 test('session tracks skeleton savings', () => {
     const pricing = resolvePricing(mockConfig({}));
     const session = new SessionTracker(pricing);

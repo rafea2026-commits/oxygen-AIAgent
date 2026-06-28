@@ -58,6 +58,10 @@
       {
         "command": "oxygen.copySessionSummary",
         "title": "Oxygen: Copy Session Summary"
+      },
+      {
+        "command": "oxygen.resetSession",
+        "title": "Oxygen: Reset Session Counter"
       }
     ],
     "configuration": {

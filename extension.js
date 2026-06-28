@@ -450,6 +450,22 @@ function registerCommands(context) {
             }
         })
     );
+
+    context.subscriptions.push(
+        vscode.commands.registerCommand('oxygen.resetSession', () => {
+            if (!session || !sessionActivity) {
+                return;
+            }
+            session.reset();
+            sessionActivity.reset();
+            flushSessionSummary();
+            refreshStatusBar(vscode.window.activeTextEditor);
+            log('session counter reset — re-indexing workspace');
+            statusBar?.renderIndexing();
+            void runWorkspaceIndex(false);
+            void vscode.window.showInformationMessage('Oxygen: counter reset — re-indexing workspace...');
+        })
+    );
 }
 
 function deactivate() {

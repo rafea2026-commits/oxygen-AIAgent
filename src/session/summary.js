@@ -30,6 +30,13 @@ class SessionActivity {
     setIndexed(count) {
         this.indexedFiles = count;
     }
+
+    reset() {
+        this.startedAt = new Date();
+        this.files.clear();
+        this.lastScopeLabel = undefined;
+        this.indexedFiles = 0;
+    }
 }
 
 function buildSessionSummary({ activity, session, pricing, activeFile }) {
