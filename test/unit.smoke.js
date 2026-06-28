@@ -352,6 +352,44 @@ test('language groups cover mobile and backend extensions', () => {
     }
 });
 
+test('workspace index pattern updates session without opening files', () => {
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'oxygen-'));
+    const pricing = resolvePricing(mockConfig({}));
+    const session = new SessionTracker(pricing);
+    const sources = [
+        { rel: 'lib/a.dart', body: buildFakeSource('dart', 120) },
+        { rel: 'src/app.js', body: buildFakeSource('js', 90) },
+        { rel: 'web/index.html', body: '<!DOCTYPE html><html><head><title>X</title></head><body><main id="app">' + 'x'.repeat(200) + '</main><script>secret();</script></body></html>' },
+    ];
+
+    for (const file of sources) {
+        const full = path.join(tmp, file.rel);
+        fs.mkdirSync(path.dirname(full), { recursive: true });
+        fs.writeFileSync(full, file.body);
+        const result = processFile(tmp, full, file.body, pricing);
+        session.recordSkeleton(`file://${full}`, file.body, result.skeleton);
+    }
+
+    assert.ok(session.getTotalSavedTokens() > 0);
+    assert.ok(session.getTotalSavedUSD() > 0);
+    fs.rmSync(tmp, { recursive: true, force: true });
+
+    function buildFakeSource(kind, lines) {
+        if (kind === 'dart') {
+            return [
+                "import 'package:flutter/material.dart';",
+                'class WidgetA extends StatelessWidget {',
+                ...Array.from({ length: lines }, (_, i) => `  void m${i}() { print('line ${i} padding text'); }`),
+                '}',
+            ].join('\n');
+        }
+        return [
+            "import fs from 'fs';",
+            ...Array.from({ length: lines }, (_, i) => `export function fn${i}() { return fs.readFileSync('f${i}.txt'); }`),
+        ].join('\n');
+    }
+});
+
 test('session tracks skeleton savings', () => {
     const pricing = resolvePricing(mockConfig({}));
     const session = new SessionTracker(pricing);

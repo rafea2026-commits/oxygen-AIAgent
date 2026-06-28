@@ -13,7 +13,7 @@ const { processFile } = require('./src/oxygenCache');
 const { createStatusBar } = require('./src/ui/statusBar');
 const { SessionActivity, buildSessionSummary, writeSessionSummary } = require('./src/session/summary');
 const { writeProjectMap, entryFromProcessResult } = require('./src/context/projectMap');
-const { indexWorkspace, buildContextBundle, minifySelection } = require('./src/context/bundle');
+const { indexWorkspace, buildContextBundle, minifySelection, isSourceFile } = require('./src/context/bundle');
 
 /** @type {SessionTracker | undefined} */
 let session;
@@ -29,6 +29,8 @@ let debounceTimer;
 let summaryTimer;
 /** @type {NodeJS.Timeout | undefined} */
 let summaryFlushTimer;
+/** @type {Map<string, NodeJS.Timeout>} */
+const fileWatchTimers = new Map();
 
 function log(msg) {
     const line = `[Oxygen] ${msg}`;
@@ -115,13 +117,14 @@ function activate(context) {
     }
 
     registerCommands(context);
+    setupFileWatcher(context);
 
     setImmediate(() => {
         const root = getWorkspaceRoot();
         if (root && getConfig().get('tokens.autoIndexOnOpen', true)) {
+            statusBar?.renderIndexing();
             void runWorkspaceIndex(false);
-        }
-        if (vscode.window.activeTextEditor) {
+        } else if (vscode.window.activeTextEditor) {
             void handleEditor(vscode.window.activeTextEditor);
         } else {
             refreshStatusBar(undefined);
@@ -181,6 +184,71 @@ async function handleEditor(editor) {
     if (config.get('session.autoSummary', true)) {
         scheduleSummaryFlush();
     }
+}
+
+async function processFileOnDisk(fsPath) {
+    const root = getWorkspaceRoot();
+    if (!root || !session || !fsPath.startsWith(root) || !isSourceFile(fsPath)) {
+        return;
+    }
+
+    const config = getConfig();
+    if (!config.get('skeleton.autoCache', true)) {
+        return;
+    }
+
+    try {
+        const text = fs.readFileSync(fsPath, 'utf8');
+        if (text.length < 40) {
+            return;
+        }
+        const pricing = getPricing();
+        const result = processFile(root, fsPath, text, pricing);
+        session.recordSkeleton(vscode.Uri.file(fsPath).toString(), text, result.skeleton);
+        refreshStatusBar(vscode.window.activeTextEditor);
+        if (config.get('session.autoSummary', true)) {
+            scheduleSummaryFlush();
+        }
+    } catch (err) {
+        log(`disk scan skip: ${err instanceof Error ? err.message : err}`);
+    }
+}
+
+function scheduleDiskProcess(fsPath) {
+    const existing = fileWatchTimers.get(fsPath);
+    if (existing) {
+        clearTimeout(existing);
+    }
+    fileWatchTimers.set(fsPath, setTimeout(() => {
+        fileWatchTimers.delete(fsPath);
+        void processFileOnDisk(fsPath);
+    }, 600));
+}
+
+function setupFileWatcher(context) {
+    if (!getConfig().get('tokens.watchFiles', true)) {
+        return;
+    }
+
+    const watcher = vscode.workspace.createFileSystemWatcher('**/*');
+    const onDiskChange = (uri) => {
+        if (uri.scheme !== 'file') {
+            return;
+        }
+        scheduleDiskProcess(uri.fsPath);
+    };
+
+    watcher.onDidChange(onDiskChange);
+    watcher.onDidCreate(onDiskChange);
+    context.subscriptions.push(watcher);
+    context.subscriptions.push({
+        dispose: () => {
+            for (const timer of fileWatchTimers.values()) {
+                clearTimeout(timer);
+            }
+            fileWatchTimers.clear();
+        },
+    });
 }
 
 async function handleFile(fsPath, text) {
@@ -243,13 +311,20 @@ async function runWorkspaceIndex(showMessage) {
     }
 
     const pricing = getPricing();
+    const trackSession = getConfig().get('skeleton.autoCache', true);
     /** @type {object[]} */
     const entries = [];
 
+    statusBar?.renderIndexing();
+
     await indexWorkspace(vscode, root, (fsPath, text) => {
         const result = processFile(root, fsPath, text, pricing);
-        entries.push(entryFromProcessResult(result));
-        return entryFromProcessResult(result);
+        const entry = entryFromProcessResult(result);
+        entries.push(entry);
+        if (trackSession) {
+            session.recordSkeleton(vscode.Uri.file(fsPath).toString(), text, result.skeleton);
+        }
+        return entry;
     });
 
     const { savedTokens, savedPercent } = writeProjectMap(root, entries);
@@ -258,7 +333,7 @@ async function runWorkspaceIndex(showMessage) {
 
     if (showMessage) {
         void vscode.window.showInformationMessage(
-            `Oxygen: indexed ${entries.length} files — ${savedPercent}% token savings available`
+            `Oxygen: indexed ${entries.length} files — ${savedPercent}% token savings (~${savedTokens.toLocaleString()} tok)`
         );
     }
 
@@ -387,6 +462,10 @@ function deactivate() {
     if (summaryTimer) {
         clearInterval(summaryTimer);
     }
+    for (const timer of fileWatchTimers.values()) {
+        clearTimeout(timer);
+    }
+    fileWatchTimers.clear();
     flushSessionSummary();
 }
 

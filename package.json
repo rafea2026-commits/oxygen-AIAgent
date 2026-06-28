@@ -113,7 +113,12 @@
         "oxygen.tokens.autoIndexOnOpen": {
           "type": "boolean",
           "default": true,
-          "description": "Index workspace skeletons on open (writes .oxygen/project-map.md)."
+          "description": "Auto-index workspace on open — caches skeletons, updates status bar, writes .oxygen/project-map.md (no need to open files manually)."
+        },
+        "oxygen.tokens.watchFiles": {
+          "type": "boolean",
+          "default": true,
+          "description": "Auto-update savings when workspace files are created or changed on disk."
         },
         "oxygen.tokens.largeFileWarning": {
           "type": "number",
