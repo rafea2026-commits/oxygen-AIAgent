@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.0.4] - 2026-06-28
+
+### Added
+- Developer credits in extension details: Harith Riad Hassan & Rafea Read Hussein.
+
+## [1.0.3] - 2026-06-28
+
+### Changed
+- Extension DETAILS page: all text in English (README + package description).
+- Removed project structure section from README.
+
 ## [1.0.2] - 2026-06-28
 
 ### Improved

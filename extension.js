@@ -55,7 +55,7 @@ function getWorkspaceRoot() {
 function activate(context) {
     logChannel = vscode.window.createOutputChannel('Oxygen');
     context.subscriptions.push(logChannel);
-    log('Token Saver v1.0 — activating');
+    log('Token Saver v1.0.3 — activating');
 
     session = new SessionTracker(getPricing());
     sessionActivity = new SessionActivity();

@@ -108,7 +108,7 @@ list.push({
         installedTimestamp: Date.now(),
         pinned: false,
         source: 'vsix',
-        publisherDisplayName: publisher,
+        publisherDisplayName: 'Harith Riad Hassan & Rafea Read Hussein',
         isPreReleaseVersion: false,
         hasPreReleaseVersion: false,
     },

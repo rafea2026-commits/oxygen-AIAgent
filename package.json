@@ -2,8 +2,15 @@
   "name": "oxygen-aiagent",
   "displayName": "Oxygen — Token Saver",
   "description": "Professional token saver for AI Agents — skeletons, compression, workspace indexing, and savings tracking.",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "publisher": "oxygen",
+  "author": {
+    "name": "Harith Riad Hassan & Rafea Read Hussein"
+  },
+  "contributors": [
+    "Harith Riad Hassan",
+    "Rafea Read Hussein"
+  ],
   "license": "MIT",
   "engines": {
     "vscode": "^1.85.0"

@@ -1,5 +1,7 @@
 # Oxygen — Token Saver
 
+**Developers:** Harith Riad Hassan & Rafea Read Hussein
+
 A **Cursor / VS Code** extension that saves AI Agent tokens — without affecting how the Agent works.
 
 ## How it works
@@ -85,4 +87,4 @@ Status bar numbers use a **code-aware estimate** (identifiers + operators), clos
 
 ---
 
-**v1.0.2** — Token Saver only. Passive mode.
+**v1.0.4** — Token Saver only. Passive mode.
