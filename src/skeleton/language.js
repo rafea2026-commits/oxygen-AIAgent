@@ -1,6 +1,7 @@
 'use strict';
 
 const path = require('path');
+const { FRAMEWORK_BASENAME_TO_GROUP } = require('../context/frameworkFiles');
 
 /** @type {Record<string, string>} */
 const EXT_TO_GROUP = {
@@ -16,6 +17,7 @@ const EXT_TO_GROUP = {
 
     // Mobile — Flutter / Dart
     dart: 'dart',
+    arb: 'json',
 
     // Mobile — iOS / Apple
     swift: 'swift',
@@ -34,8 +36,9 @@ const EXT_TO_GROUP = {
     xml: 'xmlMobile',
     pro: 'generic',
 
-    // Mobile — React Native / cross-platform configs
-    arb: 'json',
+    // WeChat mini-program
+    wxml: 'markup',
+    wxss: 'generic',
 
     // Systems / backend
     go: 'go',
@@ -60,7 +63,7 @@ const EXT_TO_GROUP = {
     bat: 'shell',
     cmd: 'shell',
 
-    // C family (native mobile modules, JNI, etc.)
+    // C family
     c: 'cpp',
     h: 'cpp',
     cpp: 'cpp',
@@ -92,25 +95,9 @@ const EXT_TO_GROUP = {
     conf: 'yaml',
 };
 
-/** Filename-based detection (mobile build files). */
+/** @type {Record<string, string>} */
 const BASENAME_TO_GROUP = {
-    'pubspec.yaml': 'yaml',
-    'pubspec.lock': 'yaml',
-    'build.gradle': 'gradle',
-    'settings.gradle': 'gradle',
-    'gradle.properties': 'yaml',
-    'AndroidManifest.xml': 'xmlMobile',
-    'Info.plist': 'xmlMobile',
-    Podfile: 'ruby',
-    Gemfile: 'ruby',
-    'app.config.js': 'cLike',
-    'app.config.ts': 'cLike',
-    'metro.config.js': 'cLike',
-    'react-native.config.js': 'cLike',
-    'capacitor.config.json': 'json',
-    'capacitor.config.ts': 'cLike',
-    'ionic.config.json': 'json',
-    'eas.json': 'json',
+    ...FRAMEWORK_BASENAME_TO_GROUP,
     'project.pbxproj': 'generic',
 };
 

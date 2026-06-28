@@ -321,6 +321,42 @@ test('Haskell skeleton keeps signatures only', () => {
     assert.ok(!meta.skeleton.includes('"Hello " ++ name'));
 });
 
+test('framework config files are indexable', () => {
+    const { isIndexableFile } = require('../src/context/frameworkFiles');
+    assert.ok(isIndexableFile('C:/app/pubspec.yaml'));
+    assert.ok(isIndexableFile('C:/app/metro.config.js'));
+    assert.ok(isIndexableFile('C:/app/android/app/src/main/AndroidManifest.xml'));
+    assert.ok(isIndexableFile('C:/app/ios/Podfile'));
+    assert.ok(isIndexableFile('C:/app/eas.json'));
+    assert.ok(!isIndexableFile('C:/app/pubspec.lock'));
+    assert.ok(!isIndexableFile('C:/app/node_modules/react/index.js'));
+    assert.ok(!isIndexableFile('C:/app/lib/model.g.dart'));
+    assert.ok(!isIndexableFile('C:/app/ios/Pods/Headers/Public/foo.h'));
+});
+
+test('detectFramework identifies Flutter and React Native', () => {
+    const { detectFramework } = require('../src/context/framework');
+    const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'oxygen-fw-'));
+
+    fs.writeFileSync(path.join(tmp, 'pubspec.yaml'), [
+        'name: demo',
+        'dependencies:',
+        '  flutter:',
+        '    sdk: flutter',
+        '  cupertino_icons: ^1.0.0',
+    ].join('\n'));
+    assert.strictEqual(detectFramework(tmp).id, 'flutter');
+
+    fs.rmSync(path.join(tmp, 'pubspec.yaml'));
+    fs.writeFileSync(path.join(tmp, 'package.json'), JSON.stringify({
+        dependencies: { 'react-native': '0.74.0', react: '18.2.0' },
+    }));
+    fs.writeFileSync(path.join(tmp, 'metro.config.js'), 'module.exports = {};');
+    assert.strictEqual(detectFramework(tmp).id, 'react-native');
+
+    fs.rmSync(tmp, { recursive: true, force: true });
+});
+
 test('language groups cover mobile and backend extensions', () => {
     const { detectLanguageGroup } = require('../src/skeleton/language');
     const cases = {
@@ -340,6 +376,11 @@ test('language groups cover mobile and backend extensions', () => {
         'main.cpp': 'cpp',
         'Engine.hpp': 'cpp',
         'index.html': 'html',
+        'metro.config.js': 'javascript',
+        'pubspec.yaml': 'yaml',
+        'AndroidManifest.xml': 'xmlMobile',
+        'Podfile': 'ruby',
+        'eas.json': 'json',
         'App.tsx': 'cLike',
         'App.vue': 'cLike',
         'schema.sql': 'sql',

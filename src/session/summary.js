@@ -12,6 +12,8 @@ class SessionActivity {
         this.lastScopeLabel = undefined;
         /** @type {number} */
         this.indexedFiles = 0;
+        /** @type {string | undefined} */
+        this.frameworkLabel = undefined;
     }
 
     touchFile(filePath) {
@@ -31,11 +33,16 @@ class SessionActivity {
         this.indexedFiles = count;
     }
 
+    setFramework(label) {
+        this.frameworkLabel = label;
+    }
+
     reset() {
         this.startedAt = new Date();
         this.files.clear();
         this.lastScopeLabel = undefined;
         this.indexedFiles = 0;
+        this.frameworkLabel = undefined;
     }
 }
 
@@ -53,6 +60,7 @@ function buildSessionSummary({ activity, session, pricing, activeFile }) {
         `Generated: ${new Date().toISOString()}`,
         `Duration: ~${durationMin} min`,
         `Model: ${pricing.label} ($${pricing.inputPerMillion}/1M input)`,
+        activity.frameworkLabel ? `Framework: ${activity.frameworkLabel}` : '',
         '',
         '## Savings',
         `- Tokens saved: **~${savedTokens.toLocaleString()}**`,

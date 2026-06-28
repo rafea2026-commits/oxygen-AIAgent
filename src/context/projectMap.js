@@ -6,8 +6,9 @@ const path = require('path');
 /**
  * @param {string} workspaceRoot
  * @param {Array<object>} entries
+ * @param {{ label?: string, id?: string } | null} [framework]
  */
-function writeProjectMap(workspaceRoot, entries) {
+function writeProjectMap(workspaceRoot, entries, framework) {
     const dir = path.join(workspaceRoot, '.oxygen');
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
@@ -23,12 +24,13 @@ function writeProjectMap(workspaceRoot, entries) {
         '# Oxygen — Project Map',
         '',
         `Updated: ${new Date().toISOString()}`,
+        framework?.label ? `Framework: ${framework.label}` : '',
         `Files indexed: ${sorted.length}`,
         `Tokens: ${totalOrig.toLocaleString()} → ${totalSkel.toLocaleString()} skeleton (${pct}% smaller)`,
         '',
         '| File | Original | Skeleton | Saved |',
         '|------|----------|----------|-------|',
-    ];
+    ].filter(Boolean);
 
     for (const e of sorted.slice(0, 80)) {
         const savePct = e.originalTokens > 0
@@ -53,6 +55,8 @@ function writeProjectMap(workspaceRoot, entries) {
     fs.writeFileSync(path.join(dir, 'project-map.md'), md, 'utf8');
     fs.writeFileSync(path.join(dir, 'token-index.json'), JSON.stringify({
         updatedAt: new Date().toISOString(),
+        framework: framework?.id ?? 'unknown',
+        frameworkLabel: framework?.label ?? 'Generic',
         fileCount: sorted.length,
         totalOriginalTokens: totalOrig,
         totalSkeletonTokens: totalSkel,

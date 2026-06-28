@@ -4,41 +4,28 @@ const fs = require('fs');
 const path = require('path');
 const { estimateTokens, minifyText } = require('../core/tokens');
 const { extractSkeletonWithMeta } = require('../skeleton');
-
-const SOURCE_EXT = new Set([
-    '.dart', '.ts', '.tsx', '.js', '.jsx', '.mjs', '.cjs', '.vue', '.svelte',
-    '.kt', '.kts', '.java', '.swift', '.m', '.mm',
-    '.py', '.pyw', '.go', '.rs', '.php', '.rb', '.erb', '.cs',
-    '.c', '.h', '.cpp', '.cc', '.cxx', '.hpp', '.scala', '.groovy',
-    '.ex', '.exs', '.hs', '.lua', '.sql',
-    '.yaml', '.yml', '.toml', '.json', '.jsonc', '.xml', '.gradle',
-    '.html', '.htm', '.css', '.scss', '.sass', '.less',
-    '.sh', '.bash', '.zsh', '.ps1', '.bat', '.cmd',
-]);
+const { isIndexableFile, INDEX_EXCLUDE_GLOB } = require('./frameworkFiles');
 
 /**
  * @param {string} fsPath
  */
 function isSourceFile(fsPath) {
-    if (/node_modules|[/\\]\.git[/\\]|[/\\]build[/\\]|[/\\]dist[/\\]|[/\\]\.oxygen[/\\]/.test(fsPath)) {
-        return false;
-    }
-    return SOURCE_EXT.has(path.extname(fsPath).toLowerCase());
+    return isIndexableFile(fsPath);
 }
 
 /**
  * @param {typeof import('vscode')} vscode
  * @param {string} workspaceRoot
- * @param {(rel: string, fsPath: string, text: string) => object | null} processFn
+ * @param {(fsPath: string, text: string) => object | null} processFn
  */
 async function indexWorkspace(vscode, workspaceRoot, processFn) {
-    const uris = await vscode.workspace.findFiles('**/*', '**/{node_modules,.git,build,dist,.oxygen}/**', 5000);
+    const uris = await vscode.workspace.findFiles('**/*', INDEX_EXCLUDE_GLOB, 5000);
     /** @type {object[]} */
     const entries = [];
 
     for (const uri of uris) {
         const fsPath = uri.fsPath;
-        if (!isSourceFile(fsPath) || !fsPath.startsWith(workspaceRoot)) {
+        if (!isIndexableFile(fsPath) || !fsPath.startsWith(workspaceRoot)) {
             continue;
         }
         try {
@@ -67,6 +54,7 @@ function buildContextBundle(opts) {
         activeSkeleton,
         activeOriginalTokens,
         scopeLabel,
+        frameworkLabel,
         sessionSavedUSD,
         sessionSavedTokens,
         pricingLabel,
@@ -82,6 +70,7 @@ function buildContextBundle(opts) {
         '',
         `Pricing: ${pricingLabel}`,
         `Session saved: ~${sessionSavedTokens.toLocaleString()} tokens ($${sessionSavedUSD.toFixed(4)})`,
+        frameworkLabel ? `Framework: ${frameworkLabel}` : '',
         scopeLabel ? `Scope: ${scopeLabel}` : '',
         activeFile ? `Active: ${activeFile}` : '',
         '',
@@ -123,6 +112,8 @@ function minifySelection(text) {
 
 module.exports = {
     isSourceFile,
+    isIndexableFile,
+    INDEX_EXCLUDE_GLOB,
     indexWorkspace,
     buildContextBundle,
     minifySelection,

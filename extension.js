@@ -13,6 +13,7 @@ const { processFile } = require('./src/oxygenCache');
 const { createStatusBar } = require('./src/ui/statusBar');
 const { SessionActivity, buildSessionSummary, writeSessionSummary } = require('./src/session/summary');
 const { writeProjectMap, entryFromProcessResult } = require('./src/context/projectMap');
+const { detectFramework, writeFrameworkInfo } = require('./src/context/framework');
 const { indexWorkspace, buildContextBundle, minifySelection, isSourceFile } = require('./src/context/bundle');
 
 /** @type {SessionTracker | undefined} */
@@ -317,6 +318,9 @@ async function runWorkspaceIndex(showMessage) {
 
     statusBar?.renderIndexing();
 
+    const framework = detectFramework(root);
+    writeFrameworkInfo(root, framework);
+
     await indexWorkspace(vscode, root, (fsPath, text) => {
         const result = processFile(root, fsPath, text, pricing);
         const entry = entryFromProcessResult(result);
@@ -327,9 +331,10 @@ async function runWorkspaceIndex(showMessage) {
         return entry;
     });
 
-    const { savedTokens, savedPercent } = writeProjectMap(root, entries);
+    const { savedTokens, savedPercent } = writeProjectMap(root, entries, framework);
     sessionActivity?.setIndexed(entries.length);
-    log(`indexed ${entries.length} files — ${savedPercent}% compressible (${savedTokens.toLocaleString()} tok)`);
+    sessionActivity?.setFramework(framework.label);
+    log(`framework: ${framework.label} — indexed ${entries.length} files — ${savedPercent}% compressible (${savedTokens.toLocaleString()} tok)`);
 
     if (showMessage) {
         void vscode.window.showInformationMessage(
@@ -383,6 +388,7 @@ function registerCommands(context) {
                 activeSkeleton: meta.skeleton,
                 activeOriginalTokens: estimateTokens(text),
                 scopeLabel: sessionActivity?.lastScopeLabel,
+                frameworkLabel: sessionActivity?.frameworkLabel,
                 sessionSavedUSD: session.getTotalSavedUSD(),
                 sessionSavedTokens: session.getTotalSavedTokens(),
                 pricingLabel: session.getPricingLabel(),
