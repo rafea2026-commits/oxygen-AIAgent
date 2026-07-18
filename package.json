@@ -3,7 +3,7 @@
   "displayName": "Oxygen — Token Saver",
   "description": "Professional token saver for AI Agents — skeletons, compression, workspace indexing, and savings tracking.",
   "icon": "icon.png",
-  "version": "1.0.5",
+  "version": "1.0.8",
   "publisher": "oxygen",
   "author": {
     "name": "Harith Riad Hassan & Rafea Read Hussein"
@@ -14,7 +14,7 @@
   ],
   "license": "MIT",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.125.0"
   },
   "categories": [
     "Other",
@@ -34,7 +34,30 @@
   ],
   "main": "./extension.js",
   "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "oxygen",
+          "title": "Oxygen",
+          "icon": "icon.png"
+        }
+      ]
+    },
+    "views": {
+      "oxygen": [
+        {
+          "type": "webview",
+          "id": "oxygen.activationView",
+          "name": "Activation",
+          "icon": "icon.png"
+        }
+      ]
+    },
     "commands": [
+      {
+        "command": "oxygen.enterLicense",
+        "title": "Oxygen: Enter / Renew License"
+      },
       {
         "command": "oxygen.showLog",
         "title": "Oxygen: Show Log"
@@ -75,6 +98,11 @@
     "configuration": {
       "title": "Oxygen Token Saver",
       "properties": {
+        "oxygen.licenseKey": {
+          "type": "string",
+          "default": "",
+          "description": "Time-bound AES license key. Extension stays locked until a valid key is entered."
+        },
         "oxygen.ui.showStatusBar": {
           "type": "boolean",
           "default": true,
@@ -102,7 +130,7 @@
         },
         "oxygen.pricing.outputPerMillion": {
           "type": "number",
-          "default": 6.0,
+          "default": 6,
           "description": "Custom USD per 1M output tokens (preset=custom)."
         },
         "oxygen.skeleton.autoCache": {
@@ -155,16 +183,23 @@
   "scripts": {
     "lint": "eslint .",
     "test:unit": "node test/unit.smoke.js",
-    "install:cursor": "node scripts/install-to-cursor.js"
+    "install:cursor": "node scripts/install-to-cursor.js",
+    "license:generate": "node scripts/generate-license.js",
+    "package:vsix": "vsce package"
   },
   "devDependencies": {
-    "@types/vscode": "^1.125.0",
+    "@types/crypto-js": "^4.2.2",
     "@types/node": "24.x",
+    "@types/vscode": "^1.125.0",
+    "@vscode/vsce": "^3.9.2",
     "eslint": "^10.5.0",
     "globals": "^16.0.0"
   },
   "overrides": {
     "diff": "^8.0.4",
     "serialize-javascript": "^7.0.6"
+  },
+  "dependencies": {
+    "crypto-js": "^4.2.0"
   }
 }

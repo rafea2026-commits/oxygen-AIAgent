@@ -9,3 +9,6 @@ scripts/**
 **/eslint.config.mjs
 **/.vscode-test.*
 package-lock.json
+z.txt
+*.vsix
+.oxygen/**

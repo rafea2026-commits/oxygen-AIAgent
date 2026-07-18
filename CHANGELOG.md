@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.0.8] - 2026-07-18
+
+### Added
+- Activation UI: license key field + **Activate** button (editor panel + Oxygen sidebar view).
+- Note: Marketplace DETAILS cannot host interactive forms — activation is in-extension.
+
+## [1.0.7] - 2026-07-18
+
+### Fixed
+- Session counter no longer fills from auto-index / background file cache.
+- Counter increases only when you use Oxygen commands (Copy Skeleton, Context Bundle, Minify, Cache Skeleton).
+- Reset Session Counter re-indexes cache but keeps the counter at **0**.
+
+## [1.0.6] - 2026-07-18
+
+### Added
+- Local serverless subscription gate (AES license keys via `crypto-js`).
+- Extension stays locked until a valid time-bound key is entered.
+- Command **Oxygen: Enter / Renew License**.
+- Developer tool: `npm run license:generate` (default +30 days).
+
 ## [1.0.5] - 2026-06-28
 
 ### Added

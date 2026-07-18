@@ -13,6 +13,7 @@ const { processFile } = require('../src/oxygenCache');
 const { writeProjectMap } = require('../src/context/projectMap');
 const { buildContextBundle, minifySelection } = require('../src/context/bundle');
 const { computeScope } = require('../src/scope');
+const { validateLicense, generateLicense, getLicenseExpiry } = require('../src/license/validate');
 
 /**
  * Minimal WorkspaceConfiguration stub for unit tests.
@@ -56,6 +57,25 @@ test('estimateTokens', () => {
     const codeTokens = estimateTokens(code);
     assert.ok(codeTokens > simple, 'code should estimate more tokens than 4 chars');
     assert.ok(codeTokens < code.length, 'estimate should be less than char count');
+});
+
+test('license validates future expiry and rejects past', () => {
+    const future = new Date();
+    future.setDate(future.getDate() + 30);
+    const past = new Date();
+    past.setDate(past.getDate() - 1);
+
+    const good = generateLicense(future);
+    const bad = generateLicense(past);
+
+    assert.ok(validateLicense(good), 'future key must be valid');
+    assert.ok(!validateLicense(bad), 'expired key must be rejected');
+    assert.ok(!validateLicense('not-a-real-key'), 'garbage key must be rejected');
+    assert.ok(!validateLicense(''), 'empty key must be rejected');
+
+    const expiry = getLicenseExpiry(good);
+    assert.ok(expiry instanceof Date);
+    assert.ok(expiry.getTime() > Date.now());
 });
 
 test('pricing preset composer', () => {

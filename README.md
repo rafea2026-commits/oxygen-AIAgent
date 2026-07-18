@@ -4,6 +4,22 @@
 
 A **Cursor / VS Code** extension that saves AI Agent tokens — without affecting how the Agent works.
 
+## License activation
+
+> **Note:** VS Code extension DETAILS pages cannot host interactive forms. Activation uses an in-editor panel and a sidebar view instead.
+
+Oxygen stays **locked** until a valid time-bound license key is entered.
+
+1. Developer generates a key (1 month default):
+   ```bash
+   npm run license:generate
+   ```
+2. Open the **Oxygen** icon in the Activity Bar (left) → **Activation** view  
+   — or run **Oxygen: Enter / Renew License**
+3. Paste the key in the field → click **Activate** → window reloads
+
+Expired / invalid keys show an error and keep Token Saver features disabled.
+
 ## How it works
 
 Oxygen is **fully passive**: it reads your files, extracts compressed skeletons, and shows savings — it does **not** modify `.cursorignore`, inject prompts, or interfere with the Agent.
@@ -45,6 +61,7 @@ Open the Command Palette (`Ctrl+Shift+P` / `Cmd+Shift+P`) and search for **Oxyge
 
 | Command | Description |
 |---------|-------------|
+| **Oxygen: Enter / Renew License** | Unlock or renew subscription |
 | **Oxygen: Copy Context Bundle** | Paste into Agent instead of full files |
 | **Oxygen: Copy File Skeleton** | Skeleton of the active file |
 | **Oxygen: Index Workspace** | Re-index the project |
@@ -73,6 +90,7 @@ Oxygen writes these under `.oxygen/` in your workspace:
 
 | Setting | Default | Description |
 |---------|---------|-------------|
+| `oxygen.licenseKey` | `""` | Time-bound AES license (set via Enter License command) |
 | `oxygen.ui.showStatusBar` | `true` | Show savings in the bottom-left status bar |
 | `oxygen.pricing.preset` | `composer` | Pricing model for $ display |
 | `oxygen.skeleton.autoCache` | `true` | Auto-cache skeletons while editing |
@@ -87,4 +105,4 @@ Status bar numbers use a **code-aware estimate** (identifiers + operators), clos
 
 ---
 
-**v1.0.5** — Token Saver only. Passive mode.
+**v1.0.8** — Token Saver only. Passive mode. License-gated.

@@ -1,0 +1,14 @@
+npm run license:generate          # صالح 30 يوماً
+npm run license:generate -- 60    # 60 يوماً
+npm run license:generate -- 2026-08-18
+
+
+
+
+
+
+
+أمر إنشاء ملف VSIX
+
+npm run package:vsix
+npx vsce package --no-dependencies

@@ -16,6 +16,8 @@ const { writeProjectMap, entryFromProcessResult } = require('./src/context/proje
 const { detectFramework, writeFrameworkInfo } = require('./src/context/framework');
 const { indexWorkspace, buildContextBundle, minifySelection, isSourceFile } = require('./src/context/bundle');
 const { WATCH_FILE_GLOB, WATCH_NAMED_GLOBS } = require('./src/context/frameworkFiles');
+const { validateLicense, getLicenseExpiry } = require('./src/license/validate');
+const { openLicensePanel, registerLicenseSidebar } = require('./src/ui/licensePanel');
 
 /** @type {SessionTracker | undefined} */
 let session;
@@ -33,6 +35,8 @@ let summaryTimer;
 let summaryFlushTimer;
 /** @type {Map<string, NodeJS.Timeout>} */
 const fileWatchTimers = new Map();
+/** @type {boolean} */
+let capabilitiesLoaded = false;
 
 function log(msg) {
     const line = `[Oxygen] ${msg}`;
@@ -52,10 +56,61 @@ function getWorkspaceRoot() {
     return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
 }
 
+/**
+ * @param {import('vscode').ExtensionContext} context
+ */
 function activate(context) {
     logChannel = vscode.window.createOutputChannel('Oxygen');
     context.subscriptions.push(logChannel);
-    log('Token Saver v1.0.3 — activating');
+    log('Token Saver v1.0.7 — license gate');
+
+    registerLicenseSidebar(context);
+
+    // Always available so the user can activate / renew even when locked
+    context.subscriptions.push(
+        vscode.commands.registerCommand('oxygen.enterLicense', () => {
+            openLicensePanel(context, { reason: 'Enter or renew your license key' });
+        })
+    );
+
+    const savedKey = getConfig().get('licenseKey', '');
+
+    if (!savedKey) {
+        showLockedStatusBar(context, 'Enter license key');
+        openLicensePanel(context, { reason: 'Oxygen is locked — activation required' });
+        return;
+    }
+
+    if (validateLicense(savedKey)) {
+        const expiry = getLicenseExpiry(savedKey);
+        log(`license valid until ${expiry ? expiry.toISOString() : 'unknown'}`);
+        loadExtensionCapabilities(context);
+    } else {
+        showLockedStatusBar(context, 'Subscription expired');
+        openLicensePanel(context, { reason: 'Your subscription has expired — renew your license' });
+    }
+}
+
+function showLockedStatusBar(context, reason) {
+    const item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
+    item.name = 'Oxygen Token Saver';
+    item.text = `O2 Oxygen | locked`;
+    item.tooltip = `Oxygen is locked — ${reason}\nClick to open activation panel`;
+    item.command = 'oxygen.enterLicense';
+    item.show();
+    context.subscriptions.push(item);
+}
+
+/**
+ * Core business logic — only runs after cryptographic license validation.
+ * @param {import('vscode').ExtensionContext} context
+ */
+function loadExtensionCapabilities(context) {
+    if (capabilitiesLoaded) {
+        return;
+    }
+    capabilitiesLoaded = true;
+    log('Core business logic authenticated — loading capabilities');
 
     session = new SessionTracker(getPricing());
     sessionActivity = new SessionActivity();
@@ -158,7 +213,6 @@ async function handleEditor(editor) {
 
     const config = getConfig();
     const pricing = getPricing();
-    const uri = editor.document.uri.toString();
     const text = editor.document.getText();
     const fsPath = editor.document.uri.fsPath;
     const root = getWorkspaceRoot();
@@ -171,8 +225,8 @@ async function handleEditor(editor) {
 
     if (config.get('skeleton.autoCache', true) && root && fsPath.startsWith(root)) {
         try {
-            const result = processFile(root, fsPath, text, pricing);
-            session.recordSkeleton(uri, text, result.skeleton);
+            // Cache only — do not count toward session counter until user uses Oxygen commands
+            processFile(root, fsPath, text, pricing);
             refreshStatusBar(editor);
         } catch (err) {
             log(`cache skip: ${err instanceof Error ? err.message : err}`);
@@ -205,8 +259,7 @@ async function processFileOnDisk(fsPath) {
             return;
         }
         const pricing = getPricing();
-        const result = processFile(root, fsPath, text, pricing);
-        session.recordSkeleton(vscode.Uri.file(fsPath).toString(), text, result.skeleton);
+        processFile(root, fsPath, text, pricing);
         refreshStatusBar(vscode.window.activeTextEditor);
         if (config.get('session.autoSummary', true)) {
             scheduleSummaryFlush();
@@ -267,10 +320,8 @@ async function handleFile(fsPath, text) {
         return;
     }
     const pricing = getPricing();
-    const uri = vscode.Uri.file(fsPath).toString();
     try {
-        const result = processFile(root, fsPath, text, pricing);
-        session.recordSkeleton(uri, text, result.skeleton);
+        processFile(root, fsPath, text, pricing);
     } catch {
         // ignore
     }
@@ -321,7 +372,6 @@ async function runWorkspaceIndex(showMessage) {
     }
 
     const pricing = getPricing();
-    const trackSession = getConfig().get('skeleton.autoCache', true);
     /** @type {object[]} */
     const entries = [];
 
@@ -330,13 +380,12 @@ async function runWorkspaceIndex(showMessage) {
     const framework = detectFramework(root);
     writeFrameworkInfo(root, framework);
 
+    // Index caches skeletons + project map only — does NOT inflate the session counter.
+    // Counter increases only when the user actively uses Oxygen commands / edits with tracking.
     await indexWorkspace(vscode, root, (fsPath, text) => {
         const result = processFile(root, fsPath, text, pricing);
         const entry = entryFromProcessResult(result);
         entries.push(entry);
-        if (trackSession) {
-            session.recordSkeleton(vscode.Uri.file(fsPath).toString(), text, result.skeleton);
-        }
         return entry;
     });
 
@@ -347,7 +396,7 @@ async function runWorkspaceIndex(showMessage) {
 
     if (showMessage) {
         void vscode.window.showInformationMessage(
-            `Oxygen: indexed ${entries.length} files — ${savedPercent}% token savings (~${savedTokens.toLocaleString()} tok)`
+            `Oxygen: indexed ${entries.length} files — ${savedPercent}% token savings available (~${savedTokens.toLocaleString()} tok). Session counter unchanged.`
         );
     }
 
@@ -369,8 +418,9 @@ function registerCommands(context) {
             const text = editor.document.getText();
             const meta = extractSkeletonWithMeta(text, editor.document.uri.fsPath);
             await vscode.env.clipboard.writeText(meta.skeleton);
-            const saved = estimateTokens(text) - estimateTokens(meta.skeleton);
-            void vscode.window.showInformationMessage(`Skeleton copied — saves ~${Math.max(0, saved)} tokens`);
+            const result = session.recordSkeleton(editor.document.uri.toString(), text, meta.skeleton);
+            refreshStatusBar(editor);
+            void vscode.window.showInformationMessage(`Skeleton copied — saves ~${Math.max(0, result.savedTokens)} tokens`);
         })
     );
 
@@ -385,6 +435,9 @@ function registerCommands(context) {
             const text = editor.document.getText();
             const meta = extractSkeletonWithMeta(text, editor.document.uri.fsPath);
             const rel = path.relative(root, editor.document.uri.fsPath).replace(/\\/g, '/');
+
+            session.recordSkeleton(editor.document.uri.toString(), text, meta.skeleton);
+            refreshStatusBar(editor);
 
             let mapExcerpt = '';
             const mapPath = path.join(root, '.oxygen', 'project-map.md');
@@ -475,15 +528,18 @@ function registerCommands(context) {
             sessionActivity.reset();
             flushSessionSummary();
             refreshStatusBar(vscode.window.activeTextEditor);
-            log('session counter reset — re-indexing workspace');
+            log('session counter reset — re-indexing workspace (counter stays at 0)');
             statusBar?.renderIndexing();
             void runWorkspaceIndex(false);
-            void vscode.window.showInformationMessage('Oxygen: counter reset — re-indexing workspace...');
+            void vscode.window.showInformationMessage('Oxygen: counter reset to 0 — re-indexing cache only...');
         })
     );
 }
 
 function deactivate() {
+    if (!capabilitiesLoaded) {
+        return;
+    }
     if (debounceTimer) {
         clearTimeout(debounceTimer);
     }
